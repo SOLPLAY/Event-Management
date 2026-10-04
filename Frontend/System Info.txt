@@ -1,0 +1,3 @@
+# Frontend
+
+React frontend for the NITT Event Management System.
