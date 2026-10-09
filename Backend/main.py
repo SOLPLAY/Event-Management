@@ -4,6 +4,10 @@ from dotenv import load_dotenv
 from pydantic import BaseModel
 import os
 
+from couchbase_db.routes import router as couchbase_router
+
+
+
 # Load environment variables
 load_dotenv()
 
@@ -122,3 +126,7 @@ def create_login(login: LoginCreate):
             status_code=500,
             detail=str(e)
         )
+
+
+
+app.include_router(couchbase_router)
