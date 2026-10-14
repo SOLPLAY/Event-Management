@@ -3,3 +3,9 @@ https://chatgpt.com/g/g-p-6a8eed0617108191ba512036eb37e13b-next-gen-database/pro
 
 2. DB design
 https://docs.google.com/spreadsheets/d/1ON_fFOjrOZdTfUpmya2QWZde9H9UihZiYM1APy1jlWE/edit?usp=sharing
+
+3. Dev Deck
+https://docs.google.com/presentation/d/1Y6kaNmsb4O28LjPDB2OKbitizI02Ks_tC6S3WP2Pv0M/edit?usp=sharing
+
+4. Tracker sheet
+https://docs.google.com/spreadsheets/d/1DozZUfHTTzrIO71Dzj86o8Iy3NOZWEZu59D0eIVhY4c/edit?usp=sharing
