@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import os
 
 from couchbase_db.routes import router as couchbase_router
+from system_administrator.internal_people import router as internal_people_router
 
 
 
@@ -40,7 +41,8 @@ def home():
     return {
         "message": "NITT Event Management API is running"
     }
-
+    
+app.include_router(internal_people_router)
 
 # -----------------------------
 # GET /login
