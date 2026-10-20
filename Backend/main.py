@@ -8,7 +8,6 @@ from couchbase_db.routes import router as couchbase_router
 from system_administrator.internal_people import router as internal_people_router
 
 
-
 # Load environment variables
 load_dotenv()
 
