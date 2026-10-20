@@ -245,58 +245,58 @@ def update_internal_person(
 
 
 
-# @router.delete("/internal-people/{person_id}")
-# def delete_internal_person(person_id: int):
-#     """Soft-delete an internal person."""
+@router.delete("/internal-people/{person_id}")
+def delete_internal_person(person_id: int):
+    """Soft-delete an internal person."""
 
-#     try:
-#         # Check that the person exists and is active
-#         existing = (
-#             supabase
-#             .table("person")
-#             .select("person_id")
-#             .eq("person_id", person_id)
-#             .eq("is_internal", True)
-#             .eq("is_delete", False)
-#             .limit(1)
-#             .execute()
-#         )
+    try:
+        # Check that the person exists and is active
+        existing = (
+            supabase
+            .table("person")
+            .select("person_id")
+            .eq("person_id", person_id)
+            .eq("is_internal", True)
+            .eq("is_delete", False)
+            .limit(1)
+            .execute()
+        )
 
-#         if not existing.data:
-#             raise HTTPException(
-#                 status_code=404,
-#                 detail="Active internal person not found"
-#             )
+        if not existing.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Active internal person not found"
+            )
 
-#         # Update the deletion flag
-#         response = (
-#             supabase
-#             .table("person")
-#             .update({"is_delete": True})
-#             .eq("person_id", person_id)
-#             .eq("is_internal", True)
-#             .eq("is_delete", False)
-#             .execute()
-#         )
+        # Update the deletion flag
+        response = (
+            supabase
+            .table("person")
+            .update({"is_delete": True})
+            .eq("person_id", person_id)
+            .eq("is_internal", True)
+            .eq("is_delete", False)
+            .execute()
+        )
 
-#         if not response.data:
-#             raise HTTPException(
-#                 status_code=404,
-#                 detail="Internal person could not be deleted"
-#             )
+        if not response.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Internal person could not be deleted"
+            )
 
-#         return {
-#             "success": True,
-#             "message": "Internal person deleted successfully",
-#             "person_id": person_id
-#         }
+        return {
+            "success": True,
+            "message": "Internal person deleted successfully",
+            "person_id": person_id
+        }
 
-#     except HTTPException:
-#         raise
+    except HTTPException:
+        raise
 
-#     except Exception as e:
-#         print("Supabase error:", repr(e))
-#         raise HTTPException(
-#             status_code=500,
-#             detail="Failed to delete internal person"
-#         )
+    except Exception as e:
+        print("Supabase error:", repr(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete internal person"
+        )
