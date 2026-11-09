@@ -1,12 +1,14 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import campusImage from "./assets/nitt-orion.jfif";
 import logo from "./assets/nitt-logo1.jfif";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const navigate = useNavigate();
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -14,10 +16,35 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // POST /login in the supplied backend creates a login record; it is not an authentication endpoint.
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: identifier.trim(), password }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          typeof result.detail === "string"
+            ? result.detail
+            : "Unable to sign in. Please check your ID and password."
+        );
+      }
+
+      const role = result.data?.role?.trim().toLowerCase();
+      if (role === "system administrator" || role === "admin") {
+        window.sessionStorage.setItem("loginUsername", result.data.username);
+        navigate("/admin", { replace: true });
+      } else {
+        setError(
+          `Your account is verified, but a home page is not configured for the ${result.data?.role || "assigned"} role yet.`
+        );
+      }
+    } catch (requestError) {
       setError(
-        "Sign-in is not available yet. The supplied backend's POST /login creates a login record; it does not authenticate or issue a session/token, so it cannot determine a role for redirect."
+        requestError instanceof TypeError
+          ? "Unable to connect to the server. Please make sure the backend is running."
+          : requestError.message
       );
     } finally {
       setLoading(false);
@@ -46,16 +73,16 @@ export default function Login() {
 
         <div className="nitt-login__form-panel">
           <h2 id="login-heading">Welcome back</h2>
-          <p className="nitt-login__intro">Sign in with your institute account to continue.</p>
+          <p className="nitt-login__intro">Sign in with your institute ID to continue.</p>
           <form onSubmit={handleSubmit}>
             <label className="nitt-login__field">
-              <span>Email address</span>
+              <span>Username or login ID</span>
               <input
                 autoComplete="username"
-                type="email"
-                name="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                type="text"
+                name="identifier"
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
                 required
                 disabled={loading}
               />
@@ -73,13 +100,16 @@ export default function Login() {
               />
             </label>
             <button className="nitt-login__submit" type="submit" disabled={loading}>
-              {loading ? "Checking availability…" : "Sign in"}
+              {loading ? "Signing in…" : "Sign in"}
             </button>
-            {error && <p className="nitt-login__error" role="alert">{error}</p>}
+            {error && (
+              <p className="nitt-login__error" role="alert">
+                {error}
+              </p>
+            )}
           </form>
           <p className="nitt-login__note">
-            Your credentials are not sent or stored by this prototype. Authentication must be connected
-            to a backend auth contract before sign-in can be enabled.
+            Use the username or numeric login ID associated with your account.
           </p>
         </div>
       </section>

@@ -1,253 +1,249 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import logo from "./assets/nitt-logo1.jfif";
 
-const assignableRoles = ["student", "event organizer", "admin"];
-const filterRoles = assignableRoles;
+const API_URL = "/api/system-administrator/internal-people";
+const DEPARTMENTS_URL = "/api/system-administrator/departments";
+const AUDIT_ACTOR =
+  window.sessionStorage.getItem("loginUsername") || "System Administrator";
+const personRoles = [
+  { value: "System Administrator", label: "System Administrator" },
+  { value: "Super Admin", label: "Super Admin" },
+  { value: "Event Organizer", label: "Event Organizer" },
+  { value: "Event Committee Member", label: "Event Committee Member" },
+  { value: "User", label: "User" },
+];
+const legacyPersonRoleLabels = { user: "User", admin: "Admin" };
+
 const emptyForm = {
-  FirstName: "",
-  LastName: "",
-  EmailID: "",
-  role: assignableRoles[0],
-  is_active: true,
+  first_name: "",
+  last_name: "",
+  email_id: "",
+  phone_number: "",
+  gender: "",
+  person_type: "User",
+  department_id: "",
+  address: "",
 };
 
-function MenuSelect({ label, value, onChange, options, compact = false }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [placement, setPlacement] = useState("below");
-  const menuRef = useRef(null);
-  const triggerRef = useRef(null);
-  const selectId = useId();
-  const selectedOption = options.find((option) => option.value === value);
+async function requestApi(url, options) {
+  const response = await fetch(url, options);
+  let result;
 
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    function closeOnOutsideClick(event) {
-      if (!menuRef.current?.contains(event.target)) setIsOpen(false);
-    }
-
-    document.addEventListener("pointerdown", closeOnOutsideClick);
-    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
-  }, [isOpen]);
-
-  function focusOption(index) {
-    const optionElements = menuRef.current?.querySelectorAll('[role="option"]');
-    if (!optionElements?.length) return;
-    const targetIndex = (index + optionElements.length) % optionElements.length;
-    optionElements[targetIndex].focus();
+  try {
+    result = await response.json();
+  } catch {
+    throw new Error("The server returned an invalid response.");
   }
 
-  function openMenu() {
-    const triggerBounds = triggerRef.current?.getBoundingClientRect();
-    if (triggerBounds) {
-      const menuHeight = Math.min(
-        220,
-        window.innerHeight * 0.45,
-        options.length * 36 + 10
-      );
-      const spaceBelow = window.innerHeight - triggerBounds.bottom;
-      const spaceAbove = triggerBounds.top;
-      setPlacement(
-        spaceBelow < menuHeight && spaceAbove > spaceBelow ? "above" : "below"
-      );
-    }
-    setIsOpen(true);
+  if (!response.ok) {
+    const detail = result?.detail;
+    const message = Array.isArray(detail)
+      ? detail.map((issue) => issue.msg ?? "Invalid input").join(" ")
+      : detail;
+    throw new Error(
+      typeof message === "string" && message
+        ? message
+        : "The request could not be completed."
+    );
   }
 
-  function chooseOption(optionValue) {
-    onChange(optionValue);
-    setIsOpen(false);
-    triggerRef.current?.focus();
-  }
-
-  return (
-    <div
-      className={`nitt-admin__menu-select${compact ? " nitt-admin__menu-select--compact" : ""}`}
-      ref={menuRef}
-    >
-      <button
-        className="nitt-admin__role-trigger"
-        type="button"
-        ref={triggerRef}
-        aria-label={label}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        aria-controls={`${selectId}-options`}
-        onClick={() => {
-          if (isOpen) setIsOpen(false);
-          else openMenu();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-            event.preventDefault();
-            openMenu();
-            requestAnimationFrame(() =>
-              focusOption(event.key === "ArrowDown" ? 0 : options.length - 1)
-            );
-          }
-        }}
-      >
-        <span>{selectedOption?.label ?? ""}</span>
-        <span className="nitt-admin__role-chevron" aria-hidden="true" />
-      </button>
-      {isOpen && (
-        <div
-          className={`nitt-admin__role-menu nitt-admin__role-menu--${placement}`}
-          id={`${selectId}-options`}
-          role="listbox"
-          aria-label={label}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              setIsOpen(false);
-              triggerRef.current?.focus();
-            } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              const optionElements = [...menuRef.current.querySelectorAll('[role="option"]')];
-              const currentIndex = optionElements.indexOf(document.activeElement);
-              focusOption(currentIndex + (event.key === "ArrowDown" ? 1 : -1));
-            } else if (event.key === "Home" || event.key === "End") {
-              event.preventDefault();
-              focusOption(event.key === "Home" ? 0 : options.length - 1);
-            } else if (event.key === "Enter" || event.key === " ") {
-              const optionValue = document.activeElement?.dataset.value;
-              if (optionValue !== undefined) {
-                event.preventDefault();
-                chooseOption(optionValue);
-              }
-            }
-          }}
-        >
-          {options.map((option) => (
-            <button
-              className="nitt-admin__role-option"
-              type="button"
-              role="option"
-              aria-selected={value === option.value}
-              data-value={option.value}
-              key={option.value}
-              onClick={() => chooseOption(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  return result;
 }
 
-/*
- * API integration notes (based only on the supplied schema and Backend/main.py):
- * - For the directory, display Person.FirstName, Person.LastName and Person.EmailID,
- *   plus login.role and login.is_active. The current GET /login only returns login
- *   columns (including login_id, person_id, username, role, is_active, last_login,
- *   is_delete and audit fields); no endpoint or response joining Person to login
- *   is defined, so the page does not make up a list-users request.
- * - The existing POST /login requires person_id, username, password_hash, role and
- *   created_by; is_active (default true) and is_delete (default false) are optional.
- *   It only creates a login record, not a Person. The Person schema separately marks
- *   FirstName, LastName, EmailID, PhoneNumber, Gender, PersonType, IsInternal and
- *   Address as required; DepartmentID is an optional foreign key. No Person-create
- *   route, id-generation rule, username/email mapping, or combined response is defined.
- *   Keep this prototype local until those API contracts are supplied.
- * - role values are strings in the backend, without an enum constraint. This UI
- *   offers only student, event organizer and admin for assignment; system administrator
- *   is kept out of the form because that account is already provisioned.
- */
+function toForm(person) {
+  return {
+    first_name: person.first_name ?? "",
+    last_name: person.last_name ?? "",
+    email_id: person.email_id ?? "",
+    phone_number: person.phone_number ?? "",
+    gender: person.gender ?? "",
+    person_type: person.person_type ?? "",
+    department_id: person.department_id == null ? "" : String(person.department_id),
+    address: person.address ?? "",
+  };
+}
+
 export default function SystemAdministratorDashboard() {
-  const [users, setUsers] = useState([]);
+  const navigate = useNavigate();
+  const [people, setPeople] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [departmentError, setDepartmentError] = useState("");
   const [query, setQuery] = useState("");
-  const [selectedRole, setSelectedRole] = useState("");
+  const [selectedType, setSelectedType] = useState("");
   const [formOpen, setFormOpen] = useState(false);
-  const [editingEmail, setEditingEmail] = useState(null);
+  const [editingPersonId, setEditingPersonId] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [busyPersonId, setBusyPersonId] = useState(null);
+  const [pageError, setPageError] = useState("");
   const [formError, setFormError] = useState("");
 
-  const filteredUsers = useMemo(() => {
+  useEffect(() => {
+    let active = true;
+
+    async function fetchPeople() {
+      try {
+        const result = await requestApi(API_URL);
+        if (!Array.isArray(result.data)) {
+          throw new Error("The server response did not contain a people list.");
+        }
+        if (active) setPeople(result.data);
+      } catch (error) {
+        if (active) setPageError(error.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    async function fetchDepartments() {
+      try {
+        const result = await requestApi(DEPARTMENTS_URL);
+        if (!Array.isArray(result.data)) {
+          throw new Error("The server response did not contain a department list.");
+        }
+        if (active) setDepartments(result.data);
+      } catch (error) {
+        if (active) setDepartmentError(error.message);
+      }
+    }
+
+    fetchPeople();
+    fetchDepartments();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const loadPeople = useCallback(async () => {
+    setPageError("");
+    setLoading(true);
+    try {
+      const result = await requestApi(API_URL);
+      if (!Array.isArray(result.data)) {
+        throw new Error("The server response did not contain a people list.");
+      }
+      setPeople(result.data);
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const personTypes = useMemo(
+    () => [...new Set(people.map((person) => person.person_type).filter(Boolean))].sort(),
+    [people]
+  );
+
+  const filteredPeople = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return users.filter((user) => {
-      const matchesRole = !selectedRole || user.role === selectedRole;
-      const name = `${user.FirstName} ${user.LastName}`.toLowerCase();
+    return people.filter((person) => {
+      const matchesType = !selectedType || person.person_type === selectedType;
+      const searchableFields = [
+        person.first_name,
+        person.last_name,
+        person.email_id,
+        person.phone_number,
+        person.person_type,
+        person.address,
+        person.department_id,
+      ];
       const matchesSearch =
         !normalizedQuery ||
-        name.includes(normalizedQuery) ||
-        user.EmailID.toLowerCase().includes(normalizedQuery);
-      return matchesRole && matchesSearch;
+        searchableFields.some((value) =>
+          String(value ?? "").toLowerCase().includes(normalizedQuery)
+        );
+      return matchesType && matchesSearch;
     });
-  }, [query, selectedRole, users]);
+  }, [people, query, selectedType]);
 
   function openAddForm() {
-    setFormOpen(true);
-    setEditingEmail(null);
+    setEditingPersonId(null);
     setForm({ ...emptyForm });
     setFormError("");
+    setFormOpen(true);
   }
 
-  function openEditForm(user) {
-    setFormOpen(true);
-    setEditingEmail(user.EmailID);
-    setForm({
-      FirstName: user.FirstName,
-      LastName: user.LastName,
-      EmailID: user.EmailID,
-      role: user.role,
-      is_active: user.is_active,
-    });
+  function openEditForm(person) {
+    setEditingPersonId(person.person_id);
+    setForm(toForm(person));
     setFormError("");
+    setFormOpen(true);
   }
 
   function closeForm() {
+    if (saving) return;
     setFormOpen(false);
-    setEditingEmail(null);
+    setEditingPersonId(null);
     setFormError("");
   }
 
-  function saveUser(event) {
+  async function savePerson(event) {
     event.preventDefault();
     setFormError("");
+    setSaving(true);
 
-    const email = form.EmailID.trim();
-    const duplicate = users.some(
-      (user) =>
-        user.EmailID.toLowerCase() === email.toLowerCase() &&
-        user.EmailID !== editingEmail
-    );
-    if (duplicate) {
-      setFormError("EmailID must be unique.");
+    const payload = {
+      first_name: form.first_name.trim(),
+      last_name: form.last_name.trim(),
+      email_id: form.email_id.trim(),
+      phone_number: form.phone_number.trim(),
+      gender: form.gender.trim(),
+      person_type: form.person_type.trim(),
+      department_id: form.department_id === "" ? null : Number(form.department_id),
+      address: form.address.trim(),
+      ...(editingPersonId
+        ? { updated_by: AUDIT_ACTOR }
+        : { created_by: AUDIT_ACTOR }),
+    };
+
+    try {
+      await requestApi(
+        editingPersonId ? `${API_URL}/${editingPersonId}` : API_URL,
+        {
+          method: editingPersonId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      setFormOpen(false);
+      setEditingPersonId(null);
+      await loadPeople();
+    } catch (error) {
+      setFormError(error.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deletePerson(person) {
+    const fullName = `${person.first_name} ${person.last_name}`.trim();
+    if (!window.confirm(`Delete ${fullName} (${person.email_id}) from the directory?`)) {
       return;
     }
 
-    const savedUser = {
-      FirstName: form.FirstName.trim(),
-      LastName: form.LastName.trim(),
-      EmailID: email,
-      role: form.role,
-      is_active: form.is_active,
-    };
-
-    if (editingEmail) {
-      setUsers((currentUsers) =>
-        currentUsers.map((user) =>
-          user.EmailID === editingEmail ? savedUser : user
-        )
-      );
-    } else {
-      setUsers((currentUsers) => [...currentUsers, savedUser]);
+    setPageError("");
+    setBusyPersonId(person.person_id);
+    try {
+      await requestApi(`${API_URL}/${person.person_id}`, { method: "DELETE" });
+      await loadPeople();
+    } catch (error) {
+      setPageError(error.message);
+    } finally {
+      setBusyPersonId(null);
     }
-    closeForm();
   }
 
-  function deleteUser(user) {
-    const confirmed = window.confirm(
-      `Delete ${user.FirstName} ${user.LastName} (${user.EmailID}) from this prototype list?`
-    );
-    if (!confirmed) return;
+  function updateField(field, value) {
+    setForm((currentForm) => ({ ...currentForm, [field]: value }));
+  }
 
-    setUsers((currentUsers) =>
-      currentUsers.filter((currentUser) => currentUser.EmailID !== user.EmailID)
-    );
+  function logout() {
+    window.sessionStorage.removeItem("loginUsername");
+    navigate("/", { replace: true });
   }
 
   return (
@@ -260,56 +256,83 @@ export default function SystemAdministratorDashboard() {
             <div className="nitt-admin__brand-sub">EVENT MANAGEMENT PORTAL</div>
           </div>
         </div>
-        <div className="nitt-admin__profile">System administrator</div>
+        <div className="nitt-admin__session-actions">
+          <div className="nitt-admin__profile">Signed in as {AUDIT_ACTOR}</div>
+          <button
+            className="nitt-admin__button nitt-admin__button--quiet"
+            type="button"
+            onClick={logout}
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
-      <section className="nitt-admin__content" aria-labelledby="users-heading">
+      <section className="nitt-admin__content" aria-labelledby="people-heading">
         <div className="nitt-admin__eyebrow">Administration</div>
         <div className="nitt-admin__heading">
           <div>
-            <h1 id="users-heading">User directory</h1>
-            <p>Review accounts and assign portal roles.</p>
+            <h1 id="people-heading">User directory</h1>
+            <p>View and maintain people records stored in the database.</p>
           </div>
           <button
             className="nitt-admin__button nitt-admin__button--primary"
             type="button"
             onClick={openAddForm}
           >
-            Add user
+            Add person
           </button>
         </div>
 
-        <p className="nitt-admin__notice" role="status">
-          Prototype mode: user changes are held only in this page and are lost when
-          it reloads. The supplied backend has no joined user-list or user-management API.
-        </p>
+        {departmentError && (
+          <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
+            Departments could not be loaded: {departmentError}
+          </p>
+        )}
+        {pageError && (
+          <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
+            {pageError}
+            <button
+              className="nitt-admin__action"
+              type="button"
+              onClick={loadPeople}
+              disabled={loading}
+            >
+              Retry
+            </button>
+          </p>
+        )}
 
         <div className="nitt-admin__toolbar">
           <div className="nitt-admin__count">
-            {filteredUsers.length} of {users.length}{" "}
-            {users.length === 1 ? "user" : "users"}
+            {loading ? "Loading people…" : `${filteredPeople.length} of ${people.length} people`}
           </div>
           <div className="nitt-admin__filters">
             <label>
-              <span className="sr-only">Search users by name or email</span>
+              <span className="sr-only">Search people</span>
               <input
                 className="nitt-admin__search"
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search name or email"
+                placeholder="Search name, email, phone…"
               />
             </label>
-            <MenuSelect
-              label="Filter users by role"
-              compact
-              value={selectedRole}
-              onChange={setSelectedRole}
-              options={[
-                { value: "", label: "All roles" },
-                ...filterRoles.map((role) => ({ value: role, label: role })),
-              ]}
-            />
+            <label className="nitt-admin__filter-select">
+              <span className="sr-only">Filter by person type</span>
+              <select
+                className="nitt-admin__search"
+                value={selectedType}
+                onChange={(event) => setSelectedType(event.target.value)}
+              >
+                <option value="">All person types</option>
+                {personTypes.map((personType) => (
+                  <option key={personType} value={personType}>
+                    {personType}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
 
@@ -319,53 +342,71 @@ export default function SystemAdministratorDashboard() {
               <tr>
                 <th scope="col">Name</th>
                 <th scope="col">Email</th>
+                <th scope="col">Phone</th>
+                <th scope="col">Gender</th>
                 <th scope="col">Role</th>
-                <th scope="col">Status</th>
+                <th scope="col">Department</th>
+                <th scope="col">Address</th>
                 <th scope="col"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.length === 0 ? (
+              {loading ? (
                 <tr>
-                  <td className="nitt-admin__empty" colSpan="5">
-                    <strong>{users.length ? "No matching users" : "No users to display"}</strong>
-                    {users.length
-                      ? "Try another name, email, or role filter."
-                      : "Add a user to try the local prototype controls."}
+                  <td className="nitt-admin__empty" colSpan="8">Loading directory…</td>
+                </tr>
+              ) : filteredPeople.length === 0 ? (
+                <tr>
+                  <td className="nitt-admin__empty" colSpan="8">
+                    <strong>{people.length ? "No matching people" : "No people to display"}</strong>
+                    {people.length
+                      ? "Try another search or person type."
+                      : "Add a person to create the first directory record."}
                   </td>
                 </tr>
-              ) : filteredUsers.map((user) => (
-                <tr key={user.EmailID}>
-                  <td className="nitt-admin__name">
-                    {user.FirstName} {user.LastName}
-                  </td>
-                  <td className="nitt-admin__email">{user.EmailID}</td>
-                  <td>{user.role}</td>
-                  <td>
-                    <span className={`nitt-admin__status${user.is_active ? "" : " nitt-admin__status--inactive"}`}>
-                      {user.is_active ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td>
-                    <div className="nitt-admin__actions">
-                      <button
-                        className="nitt-admin__action"
-                        type="button"
-                        onClick={() => openEditForm(user)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="nitt-admin__action nitt-admin__action--delete"
-                        type="button"
-                        onClick={() => deleteUser(user)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              ) : (
+                filteredPeople.map((person) => (
+                  <tr key={person.person_id}>
+                    <td className="nitt-admin__name">
+                      {person.first_name} {person.last_name}
+                    </td>
+                    <td className="nitt-admin__email">{person.email_id}</td>
+                    <td>{person.phone_number}</td>
+                    <td>{person.gender}</td>
+                    <td>
+                      {personRoles.find((role) => role.value === person.person_type)?.label ??
+                        legacyPersonRoleLabels[person.person_type] ??
+                        person.person_type}
+                    </td>
+                    <td>
+                      {departments.find(
+                        (department) => department.department_id === person.department_id
+                      )?.department_name ?? person.department_id ?? "—"}
+                    </td>
+                    <td>{person.address}</td>
+                    <td>
+                      <div className="nitt-admin__actions">
+                        <button
+                          className="nitt-admin__action"
+                          type="button"
+                          onClick={() => openEditForm(person)}
+                          disabled={busyPersonId === person.person_id}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="nitt-admin__action nitt-admin__action--delete"
+                          type="button"
+                          onClick={() => deletePerson(person)}
+                          disabled={busyPersonId === person.person_id}
+                        >
+                          {busyPersonId === person.person_id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -379,79 +420,144 @@ export default function SystemAdministratorDashboard() {
           }}
         >
           <section
-            className="nitt-admin__dialog"
+            className="nitt-admin__dialog nitt-admin__dialog--person"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="user-form-title"
+            aria-labelledby="person-form-title"
           >
-            <h2 id="user-form-title">{editingEmail ? "Edit user" : "Add user"}</h2>
+            <h2 id="person-form-title">{editingPersonId ? "Edit person" : "Add person"}</h2>
             <p className="nitt-admin__dialog-intro">
-              Changes are local to this page and will not be saved to the backend.
+              Enter the person details required by the database.
             </p>
-            <form onSubmit={saveUser}>
+            <form onSubmit={savePerson}>
               <div className="nitt-admin__form-grid">
                 <label className="nitt-admin__field">
-                  <span>FirstName</span>
+                  <span>First name</span>
                   <input
                     autoComplete="given-name"
                     autoFocus
-                    value={form.FirstName}
-                    onChange={(event) => setForm({ ...form, FirstName: event.target.value })}
+                    maxLength={100}
+                    value={form.first_name}
+                    onChange={(event) => updateField("first_name", event.target.value)}
                     required
+                    disabled={saving}
                   />
                 </label>
                 <label className="nitt-admin__field">
-                  <span>LastName</span>
+                  <span>Last name</span>
                   <input
                     autoComplete="family-name"
-                    value={form.LastName}
-                    onChange={(event) => setForm({ ...form, LastName: event.target.value })}
+                    maxLength={100}
+                    value={form.last_name}
+                    onChange={(event) => updateField("last_name", event.target.value)}
                     required
+                    disabled={saving}
                   />
                 </label>
-                <label className="nitt-admin__field nitt-admin__field--wide">
-                  <span>EmailID</span>
+                <label className="nitt-admin__field">
+                  <span>Email</span>
                   <input
                     type="email"
                     autoComplete="email"
-                    value={form.EmailID}
-                    onChange={(event) => setForm({ ...form, EmailID: event.target.value })}
+                    maxLength={150}
+                    value={form.email_id}
+                    onChange={(event) => updateField("email_id", event.target.value)}
                     required
+                    disabled={saving}
                   />
                 </label>
-                <div className="nitt-admin__field">
-                  <span>role</span>
-                  <MenuSelect
-                    label="role"
-                    value={form.role}
-                    onChange={(role) => setForm({ ...form, role })}
-                    options={assignableRoles.map((role) => ({ value: role, label: role }))}
+                <label className="nitt-admin__field">
+                  <span>Phone number</span>
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    maxLength={20}
+                    value={form.phone_number}
+                    onChange={(event) => updateField("phone_number", event.target.value)}
+                    required
+                    disabled={saving}
                   />
-                </div>
-                <div className="nitt-admin__field">
-                  <span>is_active</span>
-                  <MenuSelect
-                    label="is_active"
-                    value={form.is_active ? "true" : "false"}
-                    onChange={(active) => setForm({ ...form, is_active: active === "true" })}
-                    options={[
-                      { value: "true", label: "Active" },
-                      { value: "false", label: "Inactive" },
-                    ]}
+                </label>
+                <label className="nitt-admin__field">
+                  <span>Gender</span>
+                  <input
+                    maxLength={10}
+                    value={form.gender}
+                    onChange={(event) => updateField("gender", event.target.value)}
+                    required
+                    disabled={saving}
                   />
-                </div>
+                </label>
+                <label className="nitt-admin__field">
+                  <span>Role</span>
+                  <select
+                    value={form.person_type}
+                    onChange={(event) => updateField("person_type", event.target.value)}
+                    required
+                    disabled={saving}
+                  >
+                    {form.person_type &&
+                      !personRoles.some((role) => role.value === form.person_type) && (
+                        <option value={form.person_type}>
+                          {legacyPersonRoleLabels[form.person_type] ?? form.person_type} (existing)
+                        </option>
+                      )}
+                    {personRoles.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="nitt-admin__field">
+                  <span>Department <span className="nitt-admin__optional">(optional)</span></span>
+                  <select
+                    value={form.department_id}
+                    onChange={(event) => updateField("department_id", event.target.value)}
+                    disabled={saving || Boolean(departmentError)}
+                  >
+                    <option value="">
+                      {departments.length ? "No department" : "No departments available"}
+                    </option>
+                    {departments.map((department) => (
+                      <option
+                        key={department.department_id}
+                        value={department.department_id}
+                      >
+                        {department.department_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="nitt-admin__field nitt-admin__field--wide">
+                  <span>Address</span>
+                  <textarea
+                    autoComplete="street-address"
+                    maxLength={500}
+                    rows={3}
+                    value={form.address}
+                    onChange={(event) => updateField("address", event.target.value)}
+                    required
+                    disabled={saving}
+                  />
+                </label>
               </div>
-              {formError && <p className="nitt-admin__notice" role="alert">{formError}</p>}
+              {formError && <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">{formError}</p>}
               <div className="nitt-admin__dialog-actions">
                 <button
                   className="nitt-admin__button nitt-admin__button--quiet"
                   type="button"
                   onClick={closeForm}
+                  disabled={saving}
                 >
                   Cancel
                 </button>
-                <button className="nitt-admin__button nitt-admin__button--primary" type="submit">
-                  Save locally
+                <button
+                  className="nitt-admin__button nitt-admin__button--primary"
+                  type="submit"
+                  disabled={saving}
+                >
+                  {saving ? "Saving…" : editingPersonId ? "Save changes" : "Add person"}
                 </button>
               </div>
             </form>

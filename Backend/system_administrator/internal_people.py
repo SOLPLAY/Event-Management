@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from supabase import Client, create_client
 from dotenv import load_dotenv
+from datetime import datetime
 import os
 
 load_dotenv()
@@ -23,6 +24,39 @@ router = APIRouter(
     prefix="/system-administrator",
     tags=["System Administrator"]
 )
+
+
+def current_audit_timestamp():
+    now = datetime.now()
+    return now.date().isoformat(), now.time().replace(microsecond=0).isoformat()
+
+
+@router.get("/departments")
+def get_departments():
+    """Fetch departments for the person form."""
+
+    try:
+        response = (
+            supabase
+            .table("department")
+            .select("department_id, department_name")
+            .eq("is_delete", False)
+            .order("department_name")
+            .execute()
+        )
+
+        return {
+            "success": True,
+            "count": len(response.data),
+            "data": response.data
+        }
+
+    except Exception as e:
+        print("Supabase error:", repr(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch departments"
+        )
 
 
 # Request model for creating an internal person
@@ -89,28 +123,71 @@ def create_internal_person(person: InternalPersonCreate):
     """Create a new internal person."""
 
     try:
-        # Check for an existing email address
+        # A soft-deleted person with this email can be restored in place.
         existing = (
             supabase
             .table("person")
-            .select("person_id")
+            .select("person_id, is_delete")
             .eq("email_id", person.email_id)
             .limit(1)
             .execute()
         )
 
-        if existing.data:
+        if existing.data and not existing.data[0].get("is_delete"):
             raise HTTPException(
                 status_code=409,
                 detail="A person with this email already exists"
             )
 
-        # Prepare the record
         person_data = person.model_dump()
         person_data["is_internal"] = True
         person_data["is_delete"] = False
+        created_date, created_time = current_audit_timestamp()
+        person_data["created_date"] = created_date
+        person_data["created_time"] = created_time
 
-        # Insert the record
+        if person.department_id is not None:
+            department = (
+                supabase
+                .table("department")
+                .select("department_id")
+                .eq("department_id", person.department_id)
+                .limit(1)
+                .execute()
+            )
+
+            if not department.data:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Department ID does not exist"
+                )
+
+        if existing.data:
+            person_id = existing.data[0]["person_id"]
+            person_data["updated_by"] = person.created_by
+            person_data["updated_date"] = created_date
+            person_data["updated_time"] = created_time
+            response = (
+                supabase
+                .table("person")
+                .update(person_data)
+                .eq("person_id", person_id)
+                .eq("is_delete", True)
+                .execute()
+            )
+
+            if not response.data:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Deleted person could not be restored; refresh and try again"
+                )
+
+            return {
+                "success": True,
+                "message": "Deleted person restored successfully",
+                "data": response.data
+            }
+
         response = (
             supabase
             .table("person")
@@ -201,14 +278,9 @@ def update_internal_person(
 
         update_data["updated_by"] = person.updated_by
 
-        # Update audit date/time in Python
-        from datetime import datetime
-
-        now = datetime.now()
-        update_data["updated_date"] = now.date().isoformat()
-        update_data["updated_time"] = now.time().replace(
-            microsecond=0
-        ).isoformat()
+        updated_date, updated_time = current_audit_timestamp()
+        update_data["updated_date"] = updated_date
+        update_data["updated_time"] = updated_time
 
         # Update record in Supabase
         response = (

@@ -64,6 +64,28 @@ Administrators can manage events from a centralized dashboard and access relevan
 
 Additional database technologies may be explored as the project develops.
 
+## Running the application
+
+1. From `Backend`, install dependencies with `py -m pip install -r requirements.txt`.
+2. Configure `Backend/.env` with `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
+   `COUCHBASE_CONNECTION_STRING`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`,
+   `COUCHBASE_BUCKET`, `COUCHBASE_SCOPE` and `COUCHBASE_COLLECTION`.
+3. From `Backend`, start the API with `uvicorn main:app --reload` (port 8000).
+4. From `Frontend`, run `npm install` and `npm run dev`.
+
+The login form accepts either the account username or numeric `login_id`. The
+backend verifies the password against the `login` table; currently only the
+System Administrator role has a configured destination (`/admin`). Existing
+plaintext passwords are upgraded to salted PBKDF2 hashes after a successful
+sign-in.
+
+The system-administrator directory loads active departments from the
+`department` table's `department_id` and `department_name` columns. The
+directory role selection is stored as the person's `person_type`; it does not
+create or change a login account. When a person is soft-deleted, adding the
+same email again restores that record and updates its details and creation
+audit fields.
+
 ---
 
 ## 🎯 Project Objectives
