@@ -32,13 +32,25 @@ export default function Login() {
       }
 
       const role = result.data?.role?.trim().toLowerCase();
-      if (role === "system administrator" || role === "admin") {
-        window.sessionStorage.setItem("loginUsername", result.data.username);
-        navigate("/admin", { replace: true });
-      } else {
+      const destinations = {
+        "system administrator": "/admin",
+        admin: "/admin",
+        "super admin": "/super-admin",
+        "event organizer": "/event-organizer",
+      };
+      const destination = destinations[role];
+      if (!destination) {
         setError(
           `Your account is verified, but a home page is not configured for the ${result.data?.role || "assigned"} role yet.`
         );
+      } else if (!result.data?.access_token) {
+        setError("Sign in succeeded, but the server did not start an authenticated session.");
+      } else {
+        window.sessionStorage.setItem("loginUsername", result.data.username);
+        window.sessionStorage.setItem("personId", String(result.data.person_id));
+        window.sessionStorage.setItem("loginRole", result.data.role);
+        window.sessionStorage.setItem("accessToken", result.data.access_token);
+        navigate(destination, { replace: true });
       }
     } catch (requestError) {
       setError(

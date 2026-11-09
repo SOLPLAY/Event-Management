@@ -75,9 +75,9 @@ Additional database technologies may be explored as the project develops.
 
 The login form accepts either the account username or numeric `login_id`. The
 backend verifies the password against the `login` table; currently only the
-System Administrator role has a configured destination (`/admin`). Existing
-plaintext passwords are upgraded to salted PBKDF2 hashes after a successful
-sign-in.
+System Administrator, Super Admin, and Event Organizer roles have configured
+destinations. Existing plaintext passwords are upgraded to salted PBKDF2 hashes
+after a successful sign-in.
 
 The system-administrator directory loads active departments from the
 `department` table's `department_id` and `department_name` columns. The
@@ -85,6 +85,26 @@ directory role selection is stored as the person's `person_type`; it does not
 create or change a login account. When a person is soft-deleted, adding the
 same email again restores that record and updates its details and creation
 audit fields.
+
+Event organizers can create events for Super Admin approval, edit pending
+events, edit and resubmit rejected events, and publish approved events. Approved
+events cannot be edited. Event categories are selected from Hackathon, Seminar,
+Workshop, Competition, and Symposium; descriptions are stored in
+`event_type.description`. Super Admins can
+review all events and approve or reject pending requests. Organizer event lists
+are scoped to the authenticated user's `person_id` through `event_organizer`.
+Published events become completed after their end date; published and
+completed events cannot be edited or deleted. Event type is saved in both
+`event.type` and `event_type.category`.
+
+Super Admin event endpoints are defined in `Backend/super_admin/super_admin.py`,
+and Event Organizer endpoints are defined in
+`Backend/event_organizer/event_organizer.py`. Shared event models and helpers
+remain in `Backend/event_management.py`.
+
+The event-management API uses an eight-hour signed bearer token. Set
+`AUTH_TOKEN_SECRET` in `Backend/.env` to a private signing secret; if omitted,
+the backend uses `SUPABASE_SECRET_KEY`.
 
 ---
 

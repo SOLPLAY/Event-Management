@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import logo from "./assets/nitt-logo1.jfif";
+import { clearLoginSession } from "./eventApi";
 
 const API_URL = "/api/system-administrator/internal-people";
 const DEPARTMENTS_URL = "/api/system-administrator/departments";
@@ -242,7 +243,7 @@ export default function SystemAdministratorDashboard() {
   }
 
   function logout() {
-    window.sessionStorage.removeItem("loginUsername");
+    clearLoginSession();
     navigate("/", { replace: true });
   }
 
