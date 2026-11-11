@@ -12,6 +12,7 @@ from auth_tokens import create_access_token
 from event_organizer.event_organizer import router as event_organizer_router
 from super_admin.super_admin import router as super_admin_router
 from system_administrator.internal_people import router as internal_people_router
+from organizing_committee.events import router as organizing_committee_events_router
 
 
 # Load environment variables
@@ -50,6 +51,7 @@ def home():
 app.include_router(internal_people_router)
 app.include_router(super_admin_router)
 app.include_router(event_organizer_router)
+app.include_router(organizing_committee_events_router)
 
 # -----------------------------
 # GET /login
@@ -259,7 +261,6 @@ def create_login(login: LoginCreate):
             status_code=500,
             detail=str(e)
         )
-
 
 
 app.include_router(couchbase_router)
