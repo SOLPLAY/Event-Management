@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import campusImage from "./assets/nitt-orion.jfif";
+import campusImage from "./assets/nit trichy.jpeg";
 import logo from "./assets/nitt-logo1.jfif";
+import "./login-visual.css";
 
 export default function Login() {
   const [identifier, setIdentifier] = useState("");
