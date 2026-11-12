@@ -209,3 +209,57 @@ def update_event_session(
             detail="Failed to update event session"
         )
         
+
+@router.post("/event-schedule/{session_id}/delete")
+def delete_event_session(
+    session_id: int
+):
+    try:
+        # Check whether session exists and is active
+        existing = (
+            supabase.table("session")
+            .select("session_id")
+            .eq("session_id", session_id)
+            .eq("is_delete", False)
+            .limit(1)
+            .execute()
+        )
+
+        if not existing.data:
+            raise HTTPException(
+                status_code=404,
+                detail="Active event session not found"
+            )
+
+        # Soft delete the session
+        response = (
+            supabase.table("session")
+            .update({
+                "is_delete": True
+            })
+            .eq("session_id", session_id)
+            .eq("is_delete", False)
+            .execute()
+        )
+
+        if not response.data:
+            raise HTTPException(
+                status_code=500,
+                detail="Session deletion failed"
+            )
+
+        return {
+            "success": True,
+            "message": "Event session deleted successfully",
+            "session_id": session_id
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print("Supabase error:", repr(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete event session"
+        )
