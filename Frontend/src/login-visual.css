@@ -1,0 +1,102 @@
+/*
+ * Login page, left panel: show the WHOLE photo and put the text on a solid panel.
+ *
+ * Before: the photo filled the panel with object-fit: cover (so the sides were cut off
+ * and "NIT TRICHY" in the picture was clipped), and the headline sat on top of the busy
+ * photo, which made the gold and white text hard to read.
+ *
+ * Now: the photo is shown in full on top (object-fit: contain, nothing is cropped), and
+ * the text sits underneath on the dark navy panel with a thin gold line between them.
+ *
+ * Import this AFTER index.css (see Login.jsx). It only overrides the left panel.
+ */
+
+.nitt-login__card {
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+}
+
+.nitt-login__visual {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 0;
+  background: var(--nitt-ink-deep);
+}
+
+/* The dark gradient that used to sit on top of the photo is no longer needed. */
+.nitt-login__visual::before {
+  display: none;
+}
+
+.nitt-login__visual-image {
+  position: static;
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+  flex: 0 1 auto;
+  background: var(--nitt-ink-deep);
+  object-fit: contain;
+  object-position: center;
+}
+
+.nitt-login__visual-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(20px, 3vw, 34px) clamp(24px, 3.4vw, 40px);
+  border-top: 3px solid var(--nitt-gold);
+  background: var(--nitt-ink-deep);
+}
+
+.nitt-login__eyebrow {
+  color: var(--nitt-gold);
+  font-size: 11px;
+  letter-spacing: .18em;
+}
+
+.nitt-login__visual h1 {
+  max-width: none;
+  margin: 10px 0 10px;
+  color: #fff;
+  font-size: clamp(26px, 3vw, 38px);
+  letter-spacing: -.015em;
+  line-height: 1.15;
+}
+
+.nitt-login__visual p {
+  max-width: 420px;
+  color: rgba(255, 255, 255, .88);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+@media (max-width: 700px) {
+  .nitt-login__card {
+    grid-template-columns: 1fr;
+  }
+
+  .nitt-login__visual {
+    min-height: 0;
+    padding: 0;
+  }
+
+  .nitt-login__visual-image {
+    max-height: 230px;
+  }
+
+  .nitt-login__visual-copy {
+    padding: 18px 22px 22px;
+  }
+
+  .nitt-login__visual h1 {
+    margin: 8px 0;
+    font-size: 26px;
+  }
+
+  .nitt-login__visual p {
+    font-size: 12px;
+  }
+}

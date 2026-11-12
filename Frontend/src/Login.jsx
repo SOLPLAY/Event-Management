@@ -37,6 +37,8 @@ export default function Login() {
         admin: "/admin",
         "super admin": "/super-admin",
         "event organizer": "/event-organizer",
+        user: "/user",
+        users: "/user",
       };
       const destination = destinations[role];
       if (!destination) {

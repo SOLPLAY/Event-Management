@@ -3,6 +3,7 @@ import Login from "./Login";
 import SystemAdministratorDashboard from "./SystemAdministratorDashboard";
 import SuperAdminDashboard from "./SuperAdminDashboard";
 import EventOrganizerDashboard from "./EventOrganizerDashboard";
+import UserDashboard from "./user/UserDashboard";
 
 function RoleRoute({ roles, children }) {
   const activeRole = window.sessionStorage.getItem("loginRole")?.toLowerCase();
@@ -42,7 +43,16 @@ function App() {
             </RoleRoute>
           }
         />
+        <Route
+          path="/user"
+          element={
+            <RoleRoute roles={["user", "users"]}>
+              <UserDashboard />
+            </RoleRoute>
+          }
+        />
       </Routes>
+      
     </BrowserRouter>
   );
 }

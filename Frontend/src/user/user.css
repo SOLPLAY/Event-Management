@@ -1,0 +1,174 @@
+/* User role styles. Reuses the colour tokens and card classes from index.css. */
+
+.user-phase {
+  display: inline-flex;
+  min-height: 25px;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.user-phase--upcoming {
+  background: #e7eef7;
+  color: #315b83;
+}
+
+.user-phase--ongoing {
+  background: #e4f2e9;
+  color: #286847;
+}
+
+.user-phase--ended {
+  background: #e9eded;
+  color: #52646b;
+}
+
+.user-registered {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #e4f2e9;
+  color: #286847;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.user-event-card .event-card__actions {
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+/* Event detail page: the page itself is fixed-height, so this block scrolls. */
+.user-detail {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
+.user-detail__back {
+  align-self: flex-start;
+}
+
+.user-detail__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px 26px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 9px;
+  background: linear-gradient(155deg, #fff 60%, #fcfaf5);
+  box-shadow: 0 8px 24px rgba(19, 43, 59, .055);
+}
+
+.user-detail__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.user-detail__title {
+  margin: 0;
+  color: var(--nitt-ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 400;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.user-detail__description {
+  margin: 0;
+  color: var(--nitt-ink);
+  font-size: 14px;
+  line-height: 1.65;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.user-detail__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 14px 0;
+  border-block: 1px solid var(--nitt-line);
+}
+
+.user-detail__facts dt {
+  color: var(--nitt-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.user-detail__facts dd {
+  margin: 3px 0 0;
+  color: var(--nitt-ink);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.user-detail__section h3 {
+  margin: 0 0 10px;
+  color: var(--nitt-red);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.user-detail__muted {
+  margin: 0;
+  color: var(--nitt-muted);
+  font-size: 13px;
+}
+
+.user-schedule {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: 10px;
+  list-style: none;
+}
+
+.user-schedule li {
+  padding: 10px 14px;
+  border: 1px solid var(--nitt-line);
+  border-left: 3px solid var(--nitt-gold);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.user-schedule__time {
+  color: var(--nitt-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.user-schedule__title {
+  margin-top: 2px;
+  color: var(--nitt-ink);
+  font-size: 14px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.user-schedule__meta {
+  margin-top: 2px;
+  color: var(--nitt-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
