@@ -18,35 +18,21 @@ export default function UserDashboard() {
   const [view, setView] = useState("current");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   const signOut = useCallback(() => {
     clearLoginSession();
     navigate("/", { replace: true });
   }, [navigate]);
 
-  const loadEvents = useCallback(async () => {
-    try {
-      const result = await requestUserApi("/events");
-      if (!Array.isArray(result.data)) {
-        throw new Error("The server response did not contain an event list.");
-      }
-      setEvents(result.data);
-      setError("");
-    } catch (requestError) {
-      if (requestError.status === 401) {
-        signOut();
-        return;
-      }
-      setError(requestError.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [signOut]);
-
+  // Load the list on arrival and every time the user comes back from an event page
+  // (Back button, browser back, ...), so registration badges are always up to date.
+  // Changing reloadKey (the Retry button) loads it again.
   useEffect(() => {
+    if (selectedEventId) return undefined;
     let active = true;
 
-    async function fetchInitialData() {
+    async function loadEvents() {
       try {
         const result = await requestUserApi("/events");
         if (!Array.isArray(result.data)) {
@@ -66,7 +52,18 @@ export default function UserDashboard() {
       } finally {
         if (active) setLoading(false);
       }
+    }
 
+    loadEvents();
+    return () => {
+      active = false;
+    };
+  }, [selectedEventId, reloadKey, signOut]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
       // The name is only decoration, so a failure here is ignored.
       try {
         const me = await requestUserApi("/me");
@@ -76,11 +73,11 @@ export default function UserDashboard() {
       }
     }
 
-    fetchInitialData();
+    loadProfile();
     return () => {
       active = false;
     };
-  }, [signOut]);
+  }, []);
 
   const filteredEvents = useMemo(
     () => filterUserEvents(events, query, view),
@@ -144,7 +141,7 @@ export default function UserDashboard() {
                   type="button"
                   onClick={() => {
                     setLoading(true);
-                    loadEvents();
+                    setReloadKey((key) => key + 1);
                   }}
                   disabled={loading}
                 >
@@ -197,9 +194,11 @@ export default function UserDashboard() {
               </div>
             ) : (
               <p className="event-list-message">
-                {events.length
-                  ? "No events match your search or filter."
-                  : "No events have been published yet."}
+                {view === "registered" && events.length
+                  ? "You have not registered for any event yet."
+                  : events.length
+                    ? "No events match your search or filter."
+                    : "No events have been published yet."}
               </p>
             )}
           </>

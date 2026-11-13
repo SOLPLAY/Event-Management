@@ -1,23 +1,88 @@
 import { useEffect, useState } from "react";
 import { formatEventDate } from "../eventApi";
-import { formatDateTime, requestUserApi } from "./userApi";
+import { formatDateTime, formatFee, requestUserApi } from "./userApi";
+
+async function fetchEvent(eventId) {
+  const result = await requestUserApi(`/events/${eventId}`);
+  if (!result.data || typeof result.data !== "object") {
+    throw new Error("The server response did not contain this event.");
+  }
+  return result.data;
+}
+
+function RegistrationPanel({ event, registering, onRegister }) {
+  const registration = event.my_registration;
+  const fee = event.fee;
+  const feeKnown = fee !== null && fee !== undefined;
+  const isFree = feeKnown && Number(fee) === 0;
+
+  if (registration) {
+    const confirmed = registration.status === "Confirmed";
+    return (
+      <>
+        <p className="user-registered">You are registered · {registration.status}</p>
+        <p className="user-detail__muted user-register__hint">
+          {confirmed
+            ? "Your place is confirmed."
+            : feeKnown && !isFree
+              ? `Your registration is pending until your payment of ${formatFee(fee)} is verified. Online payment is not available in this version yet.`
+              : "Your registration is pending."}
+        </p>
+      </>
+    );
+  }
+
+  if (!event.registration_open) {
+    return <p className="user-detail__muted">Registration is closed for this event.</p>;
+  }
+
+  if (!feeKnown) {
+    return (
+      <p className="user-detail__muted">
+        Registration is not available yet: the fee for this event has not been set up.
+      </p>
+    );
+  }
+
+  return (
+    <div className="user-register">
+      <div className="user-register__fee">
+        <span>Registration fee</span>
+        <strong>{formatFee(fee)}</strong>
+      </div>
+      <button
+        className="nitt-admin__button nitt-admin__button--primary"
+        type="button"
+        onClick={onRegister}
+        disabled={registering}
+      >
+        {registering ? "Registering…" : "Register for this event"}
+      </button>
+      {!isFree && (
+        <p className="user-detail__muted user-register__hint">
+          Your registration will be pending until your payment is verified.
+        </p>
+      )}
+    </div>
+  );
+}
 
 // Mount this with key={eventId} so it starts fresh for every event.
 export default function UserEventDetail({ eventId, onBack, onAuthError }) {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [registering, setRegistering] = useState(false);
+  const [registerError, setRegisterError] = useState("");
+  const [registerNotice, setRegisterNotice] = useState("");
 
   useEffect(() => {
     let active = true;
 
     async function loadEvent() {
       try {
-        const result = await requestUserApi(`/events/${eventId}`);
-        if (!result.data || typeof result.data !== "object") {
-          throw new Error("The server response did not contain this event.");
-        }
-        if (active) setEvent(result.data);
+        const data = await fetchEvent(eventId);
+        if (active) setEvent(data);
       } catch (requestError) {
         if (!active) return;
         if (requestError.status === 401) {
@@ -35,6 +100,39 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
       active = false;
     };
   }, [eventId, onAuthError]);
+
+  async function handleRegister() {
+    if (registering) return;
+    setRegistering(true);
+    setRegisterError("");
+    setRegisterNotice("");
+
+    try {
+      const result = await requestUserApi(`/events/${eventId}/register`, { method: "POST" });
+      const registration = result.data;
+      if (!registration?.status) {
+        throw new Error("The server did not confirm the registration. Please check again.");
+      }
+      setEvent((current) => ({ ...current, my_registration: { status: registration.status } }));
+      setRegisterNotice(registration.message || "You are registered for this event.");
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        onAuthError();
+        return;
+      }
+      setRegisterError(requestError.message);
+      if (requestError.status === 409) {
+        // Already registered (another tab) or registration just closed: show the true state.
+        try {
+          setEvent(await fetchEvent(eventId));
+        } catch {
+          /* keep what is on screen */
+        }
+      }
+    } finally {
+      setRegistering(false);
+    }
+  }
 
   return (
     <div className="user-detail">
@@ -77,6 +175,10 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
               <dd>{formatEventDate(event.end_date)}</dd>
             </div>
             <div>
+              <dt>Registration fee</dt>
+              <dd>{formatFee(event.fee)}</dd>
+            </div>
+            <div>
               <dt>Organised by</dt>
               <dd>{event.organizers?.length ? event.organizers.join(", ") : "Not listed"}</dd>
             </div>
@@ -106,15 +208,21 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
 
           <section className="user-detail__section" aria-labelledby="registration-heading">
             <h3 id="registration-heading">Registration</h3>
-            {event.my_registration ? (
-              <p className="user-registered">
-                You are registered · {event.my_registration.status}
-              </p>
-            ) : (
-              <p className="user-detail__muted">
-                Online registration is not available in this version yet.
+            {registerNotice && (
+              <p className="user-notice user-notice--success" role="status">
+                {registerNotice}
               </p>
             )}
+            {registerError && (
+              <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
+                {registerError}
+              </p>
+            )}
+            <RegistrationPanel
+              event={event}
+              registering={registering}
+              onRegister={handleRegister}
+            />
           </section>
         </article>
       )}

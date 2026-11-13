@@ -52,12 +52,14 @@ export async function requestUserApi(path, options = {}) {
 
 export const eventViews = [
   { value: "current", label: "Upcoming & ongoing" },
+  { value: "registered", label: "My registrations" },
   { value: "past", label: "Past events" },
   { value: "all", label: "All events" },
 ];
 
 export function matchesView(event, view) {
   if (view === "all") return true;
+  if (view === "registered") return Boolean(event.my_registration);
   const past = event.phase === "Ended";
   return view === "past" ? past : !past;
 }
@@ -83,4 +85,12 @@ export function formatDateTime(value) {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+// fee: number (0 = free), or null/undefined when the fee has not been set up.
+export function formatFee(fee) {
+  if (fee === null || fee === undefined || Number.isNaN(Number(fee))) return "Not set";
+  const amount = Number(fee);
+  if (amount === 0) return "Free";
+  return `₹${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }

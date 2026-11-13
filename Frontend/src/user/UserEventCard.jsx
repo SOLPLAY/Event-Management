@@ -1,4 +1,5 @@
 import { formatEventDate } from "../eventApi";
+import { formatFee } from "./userApi";
 
 export default function UserEventCard({ event, onOpen }) {
   const registration = event.my_registration;
@@ -21,6 +22,10 @@ export default function UserEventCard({ event, onOpen }) {
         <div>
           <dt>End date</dt>
           <dd>{formatEventDate(event.end_date)}</dd>
+        </div>
+        <div>
+          <dt>Fee</dt>
+          <dd>{formatFee(event.fee)}</dd>
         </div>
         {event.organizers?.length > 0 && (
           <div>

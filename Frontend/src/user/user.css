@@ -172,3 +172,53 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
+
+.user-register {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+
+.user-register__fee {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.user-register__fee span {
+  color: var(--nitt-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.user-register__fee strong {
+  color: var(--nitt-ink);
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.user-register__hint {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.user-registered + .user-register__hint {
+  margin-top: 8px;
+}
+
+.user-notice {
+  margin: 0 0 12px;
+  padding: 11px 13px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.user-notice--success {
+  border: 1px solid #cfe5d6;
+  background: #f1f8f3;
+  color: #286847;
+}
