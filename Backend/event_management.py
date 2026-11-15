@@ -21,7 +21,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 EVENT_COLUMNS = (
     "event_id, name, type, start_date, end_date, event_status, "
-    "is_delete, created_by, created_date, created_time, updated_by, "
+    "fee, is_delete, created_by, created_date, created_time, updated_by, "
     "updated_date, updated_time"
 )
 EVENT_TYPES = ("Hackathon", "Seminar", "Workshop", "Competition", "Symposium")

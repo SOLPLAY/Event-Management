@@ -3,7 +3,7 @@ export const EVENT_WORKSPACE_SECTIONS = [
   { id: "accommodation", label: "Accommodation" },
   { id: "advertisement", label: "Advertisement" },
   { id: "evaluation", label: "Evaluation" },
-  { id: "statistics", label: "Event statistics" },
+  { id: "registrations", label: "Student registrations" },
   { id: "hospitality", label: "Hospitality" },
   { id: "report", label: "Event report" },
 ];

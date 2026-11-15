@@ -818,6 +818,143 @@ button {
   grid-column: 1 / -1;
 }
 
+.event-session-section {
+  margin-top: 30px;
+}
+
+.event-session-section h3 {
+  margin: 0 0 14px;
+  color: var(--nitt-ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  font-weight: 400;
+}
+
+.event-session-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.event-session-card {
+  padding: 16px 18px;
+  border: 1px solid var(--nitt-line);
+  border-left: 3px solid var(--nitt-gold);
+  border-radius: 6px;
+  background: #fcfcfa;
+}
+
+.event-session-card__time {
+  color: var(--nitt-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.event-session-card h4 {
+  margin: 6px 0 4px;
+  color: var(--nitt-ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.event-session-card p {
+  margin: 0;
+  color: var(--nitt-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hospitality-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 14px;
+  margin-top: 23px;
+}
+
+.hospitality-card {
+  padding: 18px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 7px;
+  background: #fcfcfa;
+}
+
+.hospitality-card__details {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+
+.hospitality-card__details dt {
+  margin-bottom: 5px;
+  color: var(--nitt-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.hospitality-card__details dd {
+  margin: 0;
+  color: var(--nitt-ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.hospitality-message {
+  margin-top: 23px;
+  padding: 20px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 7px;
+  color: var(--nitt-muted);
+  background: #fcfcfa;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.hospitality-message--error {
+  border-color: rgba(157, 59, 50, .3);
+  color: var(--nitt-red-dark);
+  background: #fff8f6;
+}
+
+.registration-table-wrap {
+  overflow-x: auto;
+  margin-top: 23px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 7px;
+}
+
+.registration-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.registration-table th,
+.registration-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--nitt-line);
+  font-size: 13px;
+}
+
+.registration-table th {
+  color: var(--nitt-muted);
+  background: #fcfcfa;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.registration-table td {
+  color: var(--nitt-ink);
+}
+
+.registration-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .event-workspace-placeholder {
   min-height: 170px;
   display: grid;
