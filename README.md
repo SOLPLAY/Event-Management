@@ -82,6 +82,15 @@ rerun the legacy room-linking update in that SQL file after adding those rooms.
 Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment; it is used for
 server-side room inventory reads and the accommodation approval function.
 
+Before marking session attendance, run
+`Documentation/session_attendance_schema.sql` in the Supabase SQL Editor.
+Attendance is stored per session and registration; organizers can mark each
+registered student present or absent from the session schedule.
+
+Event organizers can add, edit, and remove hospitality plans from each event's
+Hospitality tab. Removed plans are soft-deleted and no additional schema change
+is required.
+
 The login form accepts either the account username or numeric `login_id`. The
 backend verifies the password against the `login` table; currently only the
 System Administrator, Super Admin, and Event Organizer roles have configured

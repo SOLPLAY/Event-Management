@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { formatDateTime } from "./user/userApi";
 import { requestEventApi } from "./eventApi";
+import EventSessionAttendance from "./EventSessionAttendance";
 
 const emptyForm = {
   session_title: "",
@@ -29,6 +31,7 @@ function sessionForm(session) {
 }
 
 export default function EventSessions({ event }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [sessionsState, setSessionsState] = useState({
     eventId: null,
     records: [],
@@ -41,6 +44,10 @@ export default function EventSessions({ event }) {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const loading = sessionsState.eventId !== event.event_id;
+  const attendanceSessionId = searchParams.get("attendance_session_id");
+  const attendanceSession = sessionsState.records.find(
+    (session) => String(session.session_id) === attendanceSessionId
+  );
 
   const loadSessions = useCallback(async () => {
     try {
@@ -87,6 +94,50 @@ export default function EventSessions({ event }) {
 
   function updateField(field, value) {
     setForm((currentForm) => ({ ...currentForm, [field]: value }));
+  }
+
+  function openAttendance(session) {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("attendance_session_id", String(session.session_id));
+    setSearchParams(nextParams);
+  }
+
+  function closeAttendance() {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("attendance_session_id");
+    setSearchParams(nextParams);
+  }
+
+  if (attendanceSessionId) {
+    if (loading) {
+      return (
+        <section className="event-workspace-panel event-sessions-panel">
+          <p className="hospitality-message" role="status">Loading session…</p>
+        </section>
+      );
+    }
+    if (!attendanceSession) {
+      return (
+        <section className="event-workspace-panel event-sessions-panel">
+          <p className="hospitality-message">This session is not available.</p>
+          <button
+            className="nitt-admin__button nitt-admin__button--quiet"
+            type="button"
+            onClick={closeAttendance}
+          >
+            Back to sessions
+          </button>
+        </section>
+      );
+    }
+    return (
+      <EventSessionAttendance
+        key={`${event.event_id}-${attendanceSession.session_id}`}
+        event={event}
+        session={attendanceSession}
+        onBack={closeAttendance}
+      />
+    );
   }
 
   function startEditing(session) {
@@ -261,6 +312,14 @@ export default function EventSessions({ event }) {
                     "Speaker and venue not provided"}
                 </p>
                 <div className="event-session-card__actions">
+                  <button
+                    className="nitt-admin__button nitt-admin__button--primary"
+                    type="button"
+                    disabled={saving || busySessionId !== null}
+                    onClick={() => openAttendance(session)}
+                  >
+                    Mark attendance
+                  </button>
                   <button
                     className="nitt-admin__button nitt-admin__button--quiet"
                     type="button"

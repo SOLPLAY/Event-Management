@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import date, datetime
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
@@ -49,6 +50,21 @@ class AccommodationApproval(BaseModel):
     room_id: int = Field(gt=0)
 
 
+class HospitalityDetails(BaseModel):
+    meal_type: str = Field(min_length=1, max_length=100)
+    service_date: date
+    head_count: int = Field(ge=0)
+    vendor_name: str = Field(default="", max_length=250)
+
+    @model_validator(mode="after")
+    def normalize_hospitality(self):
+        self.meal_type = self.meal_type.strip()
+        if not self.meal_type:
+            raise ValueError("Meal type is required")
+        self.vendor_name = self.vendor_name.strip()
+        return self
+
+
 class EvaluationCreate(BaseModel):
     registration_id: int = Field(gt=0)
     score: float | None = None
@@ -60,6 +76,10 @@ class EvaluationUpdate(BaseModel):
     score: float | None = None
     feedback_rating: int | None = Field(default=None, strict=True)
     certificate_issued: bool
+
+
+class SessionAttendanceUpdate(BaseModel):
+    attendance_status: Literal["Present", "Absent"]
 
 
 @router.get("/organizer/events")
@@ -121,6 +141,146 @@ def get_event_hospitality(
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch hospitality details",
+        ) from error
+
+
+def _get_owned_hospitality(
+    event_id: int,
+    hospitality_id: int,
+    user: AuthenticatedUser,
+) -> None:
+    _get_owned_event(event_id, user)
+    records = (
+        supabase.table("hospitality")
+        .select("hospitality_id")
+        .eq("event_id", event_id)
+        .eq("hospitality_id", hospitality_id)
+        .or_("is_delete.eq.false,is_delete.is.null")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not records:
+        raise HTTPException(status_code=404, detail="Active hospitality record not found")
+
+
+@router.post("/organizer/events/{event_id}/hospitality", status_code=201)
+def create_event_hospitality(
+    event_id: int,
+    details: HospitalityDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_event(event_id, user)
+        now = datetime.now()
+        inserted = (
+            supabase.table("hospitality")
+            .insert(
+                {
+                    **details.model_dump(mode="json"),
+                    "event_id": event_id,
+                    "is_delete": False,
+                    "created_by": user.username,
+                    "created_date": now.date().isoformat(),
+                    "created_time": now.time().replace(microsecond=0).isoformat(),
+                }
+            )
+            .execute()
+            .data
+        )
+        if not inserted:
+            raise RuntimeError("The hospitality insert returned no record")
+        return {"success": True, "data": inserted[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Failed to create hospitality for event %s", event_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create hospitality details",
+        ) from error
+
+
+@router.put("/organizer/events/{event_id}/hospitality/{hospitality_id}")
+def update_event_hospitality(
+    event_id: int,
+    hospitality_id: int,
+    details: HospitalityDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_hospitality(event_id, hospitality_id, user)
+        updated = (
+            supabase.table("hospitality")
+            .update(
+                {
+                    **details.model_dump(mode="json"),
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("event_id", event_id)
+            .eq("hospitality_id", hospitality_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        if not updated:
+            raise HTTPException(
+                status_code=404,
+                detail="Active hospitality record not found",
+            )
+        return {"success": True, "data": updated[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to update hospitality %s for event %s",
+            hospitality_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update hospitality details",
+        ) from error
+
+
+@router.delete("/organizer/events/{event_id}/hospitality/{hospitality_id}")
+def delete_event_hospitality(
+    event_id: int,
+    hospitality_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_hospitality(event_id, hospitality_id, user)
+        deleted = (
+            supabase.table("hospitality")
+            .update({"is_delete": True, **_audit_fields(user.username)})
+            .eq("event_id", event_id)
+            .eq("hospitality_id", hospitality_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail="Active hospitality record not found",
+            )
+        return {"success": True, "message": "Hospitality details deleted"}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to delete hospitality %s for event %s",
+            hospitality_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete hospitality details",
         ) from error
 
 
@@ -314,6 +474,188 @@ def delete_event_session(
         raise HTTPException(
             status_code=500,
             detail="Failed to delete event session",
+        ) from error
+
+
+def _get_owned_event_session(
+    event_id: int,
+    session_id: int,
+    user: AuthenticatedUser,
+) -> dict:
+    _get_owned_event(event_id, user)
+    sessions = (
+        supabase.table("session")
+        .select("session_id, session_title")
+        .eq("event_id", event_id)
+        .eq("session_id", session_id)
+        .or_("is_delete.eq.false,is_delete.is.null")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not sessions:
+        raise HTTPException(status_code=404, detail="Active event session not found")
+    return sessions[0]
+
+
+@router.get("/organizer/events/{event_id}/sessions/{session_id}/attendance")
+def get_session_attendance(
+    event_id: int,
+    session_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        session = _get_owned_event_session(event_id, session_id, user)
+        if service_supabase is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Session attendance is not configured on the backend.",
+            )
+
+        registrations = (
+            supabase.table("registration")
+            .select("registration_id, person_id, registration_date, status")
+            .eq("event_id", event_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .order("registration_date", desc=True)
+            .execute()
+            .data
+        )
+        registration_ids = [record["registration_id"] for record in registrations]
+        attendance_by_registration = {}
+        if registration_ids:
+            attendance = (
+                service_supabase.table("session_attendance")
+                .select(
+                    "attendance_id, registration_id, attendance_status, marked_by, marked_at"
+                )
+                .eq("session_id", session_id)
+                .in_("registration_id", registration_ids)
+                .execute()
+                .data
+            )
+            attendance_by_registration = {
+                record["registration_id"]: record for record in attendance
+            }
+
+        person_ids = list({record["person_id"] for record in registrations})
+        people_by_id = {}
+        if person_ids:
+            people = (
+                supabase.table("person")
+                .select("person_id, first_name, last_name")
+                .in_("person_id", person_ids)
+                .execute()
+                .data
+            )
+            people_by_id = {person["person_id"]: person for person in people}
+
+        records = []
+        for registration in registrations:
+            person = people_by_id.get(registration["person_id"], {})
+            full_name = " ".join(
+                part
+                for part in (person.get("first_name"), person.get("last_name"))
+                if part
+            )
+            records.append(
+                {
+                    **registration,
+                    "person_name": full_name or f"Person {registration['person_id']}",
+                    **attendance_by_registration.get(
+                        registration["registration_id"],
+                        {"attendance_status": None},
+                    ),
+                }
+            )
+
+        return {
+            "success": True,
+            "session": session,
+            "count": len(records),
+            "data": records,
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to fetch attendance for session %s in event %s",
+            session_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch session attendance",
+        ) from error
+
+
+@router.put(
+    "/organizer/events/{event_id}/sessions/{session_id}/attendance/{registration_id}"
+)
+def update_session_attendance(
+    event_id: int,
+    session_id: int,
+    registration_id: int,
+    details: SessionAttendanceUpdate,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_event_session(event_id, session_id, user)
+        if service_supabase is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Session attendance is not configured on the backend.",
+            )
+
+        registrations = (
+            supabase.table("registration")
+            .select("registration_id")
+            .eq("event_id", event_id)
+            .eq("registration_id", registration_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not registrations:
+            raise HTTPException(
+                status_code=404,
+                detail="Active event registration not found",
+            )
+
+        now = datetime.now().astimezone().isoformat()
+        updated = (
+            service_supabase.table("session_attendance")
+            .upsert(
+                {
+                    "session_id": session_id,
+                    "registration_id": registration_id,
+                    "attendance_status": details.attendance_status,
+                    "marked_by": user.username,
+                    "marked_at": now,
+                    "updated_at": now,
+                },
+                on_conflict="session_id,registration_id",
+            )
+            .execute()
+            .data
+        )
+        if not updated:
+            raise RuntimeError("The session attendance update returned no record")
+        return {"success": True, "data": updated[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to update attendance for registration %s in session %s",
+            registration_id,
+            session_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update session attendance",
         ) from error
 
 

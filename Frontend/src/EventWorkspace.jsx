@@ -4,6 +4,7 @@ import { formatEventDate, requestEventApi } from "./eventApi";
 import { EVENT_WORKSPACE_SECTIONS } from "./eventWorkspaceSections";
 import EventAccommodation from "./EventAccommodation";
 import EventEvaluationSection from "./EventEvaluationSection";
+import EventHospitality from "./EventHospitality";
 import EventSessions from "./EventSessions";
 
 const placeholderCopy = {
@@ -37,12 +38,6 @@ export default function EventWorkspace({ event, section }) {
   const navigate = useNavigate();
   const activeSection =
     EVENT_WORKSPACE_SECTIONS.find((item) => item.id === section)?.id ?? "overview";
-  const [hospitalityState, setHospitalityState] = useState({
-    eventId: null,
-    records: [],
-    error: "",
-  });
-  const hospitalityLoading = hospitalityState.eventId !== event.event_id;
   const [registrationsState, setRegistrationsState] = useState({
     eventId: null,
     records: [],
@@ -62,38 +57,6 @@ export default function EventWorkspace({ event, section }) {
     error: "",
   });
   const reportLoading = reportState.eventId !== event.event_id;
-
-  useEffect(() => {
-    if (activeSection !== "hospitality") return undefined;
-
-    let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/hospitality`)
-      .then((result) => {
-        if (!Array.isArray(result.data)) {
-          throw new Error("The server response did not contain hospitality records.");
-        }
-        if (active) {
-          setHospitalityState({
-            eventId: event.event_id,
-            records: result.data,
-            error: "",
-          });
-        }
-      })
-      .catch((requestError) => {
-        if (active) {
-          setHospitalityState({
-            eventId: event.event_id,
-            records: [],
-            error: requestError.message,
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeSection, event.event_id]);
 
   useEffect(() => {
     if (activeSection !== "registrations") return undefined;
@@ -201,6 +164,10 @@ export default function EventWorkspace({ event, section }) {
 
     if (activeSection === "sessions") {
       return <EventSessions event={event} />;
+    }
+
+    if (activeSection === "hospitality") {
+      return <EventHospitality key={event.event_id} event={event} />;
     }
 
     if (activeSection === "report") {
@@ -351,52 +318,6 @@ export default function EventWorkspace({ event, section }) {
           ) : (
             <p className="hospitality-message">
               No students have registered for this event yet.
-            </p>
-          )}
-        </section>
-      );
-    }
-
-    if (activeSection === "hospitality") {
-      return (
-        <section className="event-workspace-panel" aria-labelledby="event-workspace-heading">
-          <div className="event-workspace-panel__eyebrow">{event.name}</div>
-          <h2 id="event-workspace-heading">{page.label}</h2>
-          <p>Hospitality arrangements and meal service details for this event.</p>
-          {hospitalityState.error ? (
-            <p className="hospitality-message hospitality-message--error" role="alert">
-              {hospitalityState.error}
-            </p>
-          ) : hospitalityLoading ? (
-            <p className="hospitality-message" role="status">Loading hospitality details…</p>
-          ) : hospitalityState.records.length ? (
-            <div className="hospitality-grid">
-              {hospitalityState.records.map((record) => (
-                <article className="hospitality-card" key={record.hospitality_id}>
-                  <dl className="hospitality-card__details">
-                    <div>
-                      <dt>Meal type</dt>
-                      <dd>{record.meal_type}</dd>
-                    </div>
-                    <div>
-                      <dt>Service date</dt>
-                      <dd>{formatEventDate(record.service_date)}</dd>
-                    </div>
-                    <div>
-                      <dt>Vendor</dt>
-                      <dd>{record.vendor_name || "Not provided"}</dd>
-                    </div>
-                    <div>
-                      <dt>Head count</dt>
-                      <dd>{record.head_count ?? "Not provided"}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="hospitality-message">
-              No hospitality details have been added for this event.
             </p>
           )}
         </section>
