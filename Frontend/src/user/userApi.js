@@ -139,3 +139,38 @@ export const eventTabs = [
 export function visibleTabs(event) {
   return eventTabs.filter((tab) => tab.id !== "results" || event?.event_status === "Completed");
 }
+
+// Remembers each tab's data for as long as one event page stays open, and shares requests that are
+// already in flight (so prefetching a tab and then opening it sends only ONE request).
+// Failed requests are not remembered, so Retry really asks again.
+export function createTabCache(eventId) {
+  const entries = new Map(); // resource -> { promise, data }
+
+  return {
+    peek(resource) {
+      return entries.get(resource)?.data;
+    },
+    load(resource) {
+      const existing = entries.get(resource);
+      if (existing) return existing.promise;
+      const entry = { data: undefined, promise: null };
+      entry.promise = requestUserApi(`/events/${eventId}/${resource}`)
+        .then((result) => {
+          if (!result.data || typeof result.data !== "object") {
+            throw new Error("The server response was not in the expected format.");
+          }
+          entry.data = result.data;
+          return result.data;
+        })
+        .catch((error) => {
+          entries.delete(resource);
+          throw error;
+        });
+      entries.set(resource, entry);
+      return entry.promise;
+    },
+    invalidate(...resources) {
+      resources.forEach((resource) => entries.delete(resource));
+    },
+  };
+}

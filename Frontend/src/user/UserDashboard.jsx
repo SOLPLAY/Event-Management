@@ -144,6 +144,7 @@ export default function UserDashboard() {
           <UserEventDetail
             key={selectedEventId}
             eventId={selectedEventId}
+            initialEvent={events.find((item) => String(item.event_id) === selectedEventId)}
             tab={tab}
             showPayment={showPayment}
             onTabChange={changeTab}

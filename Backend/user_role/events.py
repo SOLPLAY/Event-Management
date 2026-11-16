@@ -39,68 +39,84 @@ from user_role.common import (
     parse_date,
     phase_of,
     read_fee,
+    read_fees,
     registration_open,
     require_user,
+    run_parallel,
     status_label,
 )
 
 router = APIRouter(prefix="/user", tags=["User"])
 
 
-def _build_cards(events: list[dict], person_id: int) -> list[dict]:
-    """Attach description, organisers and the caller's own registration to each event."""
-    if not events:
-        return []
+def _card_tasks(event_ids: list[int], person_id: int, include_registration: bool = True) -> list:
+    """The queries a card needs, as callables so they can run side by side (see run_parallel).
+    Result order: event types, organiser names, fees, [my registrations]."""
 
-    event_ids = [event["event_id"] for event in events]
-
-    type_rows = (
-        supabase.table("event_type")
-        .select("event_id, category, description")
-        .in_("event_id", event_ids)
-        .eq("is_delete", False)
-        .execute()
-        .data
-    )
-    type_by_event = {row["event_id"]: row for row in type_rows}
-
-    organizer_rows = (
-        supabase.table("event_organizer")
-        .select("event_id, person_id")
-        .in_("event_id", event_ids)
-        .eq("is_delete", False)
-        .execute()
-        .data
-    )
-    organizer_ids = list({row["person_id"] for row in organizer_rows})
-    people_by_id: dict[int, dict] = {}
-    if organizer_ids:
-        # Only names are read - never email or phone.
-        people = (
-            supabase.table("person")
-            .select("person_id, first_name, last_name")
-            .in_("person_id", organizer_ids)
+    def types():
+        rows = (
+            supabase.table("event_type")
+            .select("event_id, category, description")
+            .in_("event_id", event_ids)
+            .eq("is_delete", False)
             .execute()
             .data
         )
-        people_by_id = {person["person_id"]: person for person in people}
+        return {row["event_id"]: row for row in rows}
 
-    organizers_by_event: dict[int, list[str]] = {}
-    for row in organizer_rows:
-        name = full_name(people_by_id.get(row["person_id"], {}))
-        if name:
-            organizers_by_event.setdefault(row["event_id"], []).append(name)
+    def organizers():
+        rows = (
+            supabase.table("event_organizer")
+            .select("event_id, person_id")
+            .in_("event_id", event_ids)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        person_ids = list({row["person_id"] for row in rows})
+        people: dict[int, dict] = {}
+        if person_ids:
+            # Only names are read - never email or phone.
+            people = {
+                person["person_id"]: person
+                for person in supabase.table("person")
+                .select("person_id, first_name, last_name")
+                .in_("person_id", person_ids)
+                .execute()
+                .data
+            }
+        names: dict[int, list[str]] = {}
+        for row in rows:
+            name = full_name(people.get(row["person_id"], {}))
+            if name:
+                names.setdefault(row["event_id"], []).append(name)
+        return names
 
-    registration_rows = (
-        supabase.table("registration")
-        .select("event_id, status")
-        .in_("event_id", event_ids)
-        .eq("person_id", person_id)
-        .eq("is_delete", False)
-        .execute()
-        .data
-    )
-    registration_by_event = {row["event_id"]: row for row in registration_rows}
+    def fees():
+        return read_fees(event_ids)
+
+    def registrations():
+        rows = (
+            supabase.table("registration")
+            .select("event_id, status")
+            .in_("event_id", event_ids)
+            .eq("person_id", person_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        return {row["event_id"]: row for row in rows}
+
+    tasks = [types, organizers, fees]
+    if include_registration:
+        tasks.append(registrations)
+    return tasks
+
+
+def _assemble_cards(events: list[dict], parts: list) -> list[dict]:
+    """Combine events with the results of _card_tasks (same order)."""
+    type_by_event, organizers_by_event, fee_by_event = parts[0], parts[1], parts[2]
+    registration_by_event = parts[3] if len(parts) > 3 else {}
 
     cards = []
     for event in events:
@@ -120,20 +136,32 @@ def _build_cards(events: list[dict], person_id: int) -> list[dict]:
                 "event_status": status_label(event.get("event_status")),
                 "phase": phase_of(start, end, event.get("event_status") or ""),
                 "organizers": organizers_by_event.get(event_id, []),
+                "fee": fee_json(fee_by_event.get(event_id)),
+                "registration_open": registration_open(event),
                 "my_registration": {"status": registration["status"]} if registration else None,
             }
         )
     return cards
 
 
-def _registration_summary(event_id: int, person_id: int, basic: dict) -> dict:
-    """status + amount paid + the state of the latest payment submission (if any)."""
-    summary = {**basic, "fee_paid": None, "payment_status": None}
+def _build_cards(events: list[dict], person_id: int) -> list[dict]:
+    """Attach description, organisers, fee and the caller's own registration to each event."""
+    if not events:
+        return []
+    parts = run_parallel(*_card_tasks([event["event_id"] for event in events], person_id))
+    return _assemble_cards(events, parts)
+
+
+def _registration_summary(event_id: int, person_id: int):
+    """My registration with the amount paid and the state of the latest payment submission, or None."""
     registration = my_registration(event_id, person_id)
     if not registration:
-        return summary
-    summary["status"] = registration["status"]
-    summary["fee_paid"] = registration.get("fee_paid")
+        return None
+    summary = {
+        "status": registration["status"],
+        "fee_paid": registration.get("fee_paid"),
+        "payment_status": None,
+    }
     try:
         latest = (
             supabase.table("payment_submission")
@@ -218,14 +246,9 @@ def list_events(user: AuthenticatedUser = Depends(get_current_user)):
 @router.get("/events/{event_id}")
 def get_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)):
     require_user(user)
-    try:
-        event = get_visible_event(event_id)
-        if not event:
-            # Same answer for "does not exist" and "not published yet".
-            raise HTTPException(status_code=404, detail="Event not found")
 
-        card = _build_cards([event], user.person_id)[0]
-        sessions = (
+    def sessions():
+        return (
             supabase.table("session")
             .select("session_id, session_title, speaker_name, start_time, end_time, venue")
             .eq("event_id", event_id)
@@ -234,24 +257,27 @@ def get_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)
             .execute()
             .data
         )
-        fee = read_fee(event_id)
-        if card["my_registration"]:
-            card["my_registration"] = _registration_summary(event_id, user.person_id, card["my_registration"])
+
+    try:
+        # Everything is fetched at the same moment; the event check is applied afterwards.
+        event, session_rows, *parts, summary = run_parallel(
+            lambda: get_visible_event(event_id),
+            sessions,
+            *_card_tasks([event_id], user.person_id, include_registration=False),
+            lambda: _registration_summary(event_id, user.person_id),
+        )
+        if not event:
+            # Same answer for "does not exist" and "not published yet".
+            raise HTTPException(status_code=404, detail="Event not found")
+        card = _assemble_cards([event], parts)[0]
+        card["my_registration"] = summary
     except HTTPException:
         raise
     except Exception:
         logger.exception("Could not load event %s for person_id=%s", event_id, user.person_id)
         raise HTTPException(status_code=500, detail="Unable to load this event right now")
 
-    return {
-        "success": True,
-        "data": {
-            **card,
-            "sessions": sessions,
-            "fee": fee_json(fee),
-            "registration_open": registration_open(event),
-        },
-    }
+    return {"success": True, "data": {**card, "sessions": session_rows}}
 
 
 @router.post("/events/{event_id}/register", status_code=201)
@@ -261,31 +287,33 @@ def register_for_event(event_id: int, user: AuthenticatedUser = Depends(get_curr
     today = date.today().isoformat()
 
     try:
-        event = get_visible_event(event_id)
+        def existing_row():
+            # Includes soft-deleted rows, because (event_id, person_id) is unique in the database.
+            return (
+                supabase.table("registration")
+                .select("registration_id, is_delete")
+                .eq("event_id", event_id)
+                .eq("person_id", user.person_id)
+                .limit(1)
+                .execute()
+                .data
+            )
+
+        event, fee, existing = run_parallel(
+            lambda: get_visible_event(event_id), lambda: read_fee(event_id), existing_row
+        )
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
 
         if not registration_open(event):
             raise HTTPException(status_code=409, detail="Registration is closed for this event")
 
-        fee = read_fee(event_id)
         if fee is None:
             raise HTTPException(
                 status_code=503,
                 detail="The registration fee for this event is not set up yet. Please contact the organiser.",
             )
         status = STATUS_CONFIRMED if fee == 0 else STATUS_PENDING
-
-        # Includes soft-deleted rows, because (event_id, person_id) is unique in the database.
-        existing = (
-            supabase.table("registration")
-            .select("registration_id, is_delete")
-            .eq("event_id", event_id)
-            .eq("person_id", user.person_id)
-            .limit(1)
-            .execute()
-            .data
-        )
 
         already = HTTPException(status_code=409, detail="You are already registered for this event")
 

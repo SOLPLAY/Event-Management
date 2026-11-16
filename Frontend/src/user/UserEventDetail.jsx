@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { formatEventDate } from "../eventApi";
-import { formatAmount, formatFee, requestUserApi, visibleTabs } from "./userApi";
+import { createTabCache, formatAmount, formatFee, requestUserApi, visibleTabs } from "./userApi";
 import {
   AccommodationTab,
   HospitalityTab,
@@ -155,10 +155,15 @@ export default function UserEventDetail({
   onClosePayment,
   onBack,
   onAuthError,
+  initialEvent,
 }) {
-  const [event, setEvent] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // The list already has most of what the page shows, so the page opens immediately from that card
+  // while the full event (sessions, payment state) loads in the background.
+  const [event, setEvent] = useState(initialEvent ?? null);
+  const [detailLoaded, setDetailLoaded] = useState(false);
+  const [loading, setLoading] = useState(!initialEvent);
   const [error, setError] = useState("");
+  const [cache] = useState(() => createTabCache(eventId));
   const [registering, setRegistering] = useState(false);
   const [registerError, setRegisterError] = useState("");
   const [registerNotice, setRegisterNotice] = useState("");
@@ -169,7 +174,10 @@ export default function UserEventDetail({
     async function loadEvent() {
       try {
         const data = await fetchEvent(eventId);
-        if (active) setEvent(data);
+        if (active) {
+          setEvent(data);
+          setDetailLoaded(true);
+        }
       } catch (requestError) {
         if (!active) return;
         if (requestError.status === 401) {
@@ -187,6 +195,16 @@ export default function UserEventDetail({
       active = false;
     };
   }, [eventId, onAuthError]);
+
+  // Warm the tabs up as soon as the event is known, so opening them is instant.
+  const isCompleted = event?.event_status === "Completed";
+  useEffect(() => {
+    if (!detailLoaded) return;
+    const quiet = () => {}; // a failed prefetch is ignored; opening the tab asks again and shows the error
+    cache.load("hospitality").catch(quiet);
+    cache.load("accommodation").catch(quiet);
+    if (isCompleted) cache.load("results").catch(quiet);
+  }, [cache, detailLoaded, isCompleted]);
 
   // Re-read the event quietly (after a payment was submitted, or a 409). Keeps what is on screen on failure.
   const refreshEvent = useCallback(async () => {
@@ -213,6 +231,7 @@ export default function UserEventDetail({
         ...current,
         my_registration: { status: registration.status, fee_paid: 0, payment_status: null },
       }));
+      cache.invalidate("accommodation", "results"); // they depend on being registered
       if (registration.next_step === "payment") {
         onOpenPayment(); // paid event: straight to the payment page
       } else {
@@ -233,7 +252,7 @@ export default function UserEventDetail({
     }
   }
 
-  const tabs = event ? visibleTabs(event) : [];
+  const tabs = event && !error ? visibleTabs(event) : [];
   const activeTab = tabs.some((item) => item.id === tab) ? tab : "overview";
   const paymentAvailable = Boolean(event?.my_registration) && Number(event?.fee) > 0;
 
@@ -257,7 +276,11 @@ export default function UserEventDetail({
         </p>
       )}
 
-      {!loading && event && showPayment && paymentAvailable && (
+      {!loading && event && !error && showPayment && !detailLoaded && (
+        <p className="event-list-message">Loading payment page…</p>
+      )}
+
+      {!loading && event && !error && showPayment && detailLoaded && paymentAvailable && (
         <UserPaymentPage
           eventId={eventId}
           onBack={onClosePayment}
@@ -266,7 +289,7 @@ export default function UserEventDetail({
         />
       )}
 
-      {!loading && event && showPayment && !paymentAvailable && (
+      {!loading && event && !error && showPayment && detailLoaded && !paymentAvailable && (
         <article className="user-detail__panel">
           <p className="user-detail__muted">
             {event.my_registration
@@ -279,7 +302,7 @@ export default function UserEventDetail({
         </article>
       )}
 
-      {!loading && event && !showPayment && (
+      {!loading && event && !error && !showPayment && (
         <article className="user-detail__panel">
           <div className="user-detail__topline">
             <span className={`user-phase user-phase--${event.phase.toLowerCase()}`}>
@@ -313,19 +336,27 @@ export default function UserEventDetail({
             aria-labelledby={`tab-${activeTab}`}
           >
             {activeTab === "overview" && <OverviewTab event={event} />}
-            {activeTab === "schedule" && <ScheduleTab sessions={event.sessions} />}
+            {activeTab === "schedule" &&
+              (detailLoaded ? (
+                <ScheduleTab sessions={event.sessions} />
+              ) : (
+                <p className="event-list-message">Loading…</p>
+              ))}
             {activeTab === "hospitality" && (
-              <HospitalityTab key="hospitality" eventId={eventId} onAuthError={onAuthError} />
+              <HospitalityTab key="hospitality" cache={cache} onAuthError={onAuthError} />
             )}
             {activeTab === "accommodation" && (
               <AccommodationTab
                 key="accommodation"
-                eventId={eventId}
+                cache={cache}
                 onAuthError={onAuthError}
                 onGoToRegistration={() => onTabChange("registration")}
               />
             )}
-            {activeTab === "registration" && (
+            {activeTab === "registration" && !detailLoaded && (
+              <p className="event-list-message">Loading…</p>
+            )}
+            {activeTab === "registration" && detailLoaded && (
               <section aria-labelledby="registration-heading">
                 <h3 id="registration-heading" className="sr-only">Registration and payment</h3>
                 {registerNotice && (
@@ -347,7 +378,7 @@ export default function UserEventDetail({
               </section>
             )}
             {activeTab === "results" && (
-              <ResultsTab key="results" eventId={eventId} onAuthError={onAuthError} />
+              <ResultsTab key="results" cache={cache} onAuthError={onAuthError} />
             )}
           </div>
         </article>

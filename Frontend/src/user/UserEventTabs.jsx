@@ -1,11 +1,16 @@
 import { useEffect, useState } from "react";
 import { formatEventDate } from "../eventApi";
-import { formatDateTime, ordinal, requestUserApi } from "./userApi";
+import { formatDateTime, ordinal } from "./userApi";
 
-// Loads one tab's data from /user/events/{id}/{resource} when the tab is opened.
-// Mount it with a key per tab so every tab starts fresh.
-function LazyTab({ eventId, resource, onAuthError, children }) {
-  const [state, setState] = useState({ loading: true, data: null, error: "" });
+// Shows one tab's data. It comes from the event's cache (see createTabCache), so a tab that was
+// prefetched or opened before appears instantly. Mount it with a key per tab.
+function LazyTab({ cache, resource, onAuthError, children }) {
+  const cached = cache.peek(resource);
+  const [state, setState] = useState({
+    loading: cached === undefined,
+    data: cached ?? null,
+    error: "",
+  });
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -13,11 +18,8 @@ function LazyTab({ eventId, resource, onAuthError, children }) {
 
     async function load() {
       try {
-        const result = await requestUserApi(`/events/${eventId}/${resource}`);
-        if (!result.data || typeof result.data !== "object") {
-          throw new Error("The server response was not in the expected format.");
-        }
-        if (active) setState({ loading: false, data: result.data, error: "" });
+        const data = await cache.load(resource);
+        if (active) setState({ loading: false, data, error: "" });
       } catch (requestError) {
         if (!active) return;
         if (requestError.status === 401) {
@@ -32,7 +34,7 @@ function LazyTab({ eventId, resource, onAuthError, children }) {
     return () => {
       active = false;
     };
-  }, [eventId, resource, reloadKey, onAuthError]);
+  }, [cache, resource, reloadKey, onAuthError]);
 
   if (state.loading) return <p className="event-list-message">Loading…</p>;
 
@@ -57,9 +59,9 @@ function LazyTab({ eventId, resource, onAuthError, children }) {
   return children(state.data);
 }
 
-export function HospitalityTab({ eventId, onAuthError }) {
+export function HospitalityTab({ cache, onAuthError }) {
   return (
-    <LazyTab eventId={eventId} resource="hospitality" onAuthError={onAuthError}>
+    <LazyTab cache={cache} resource="hospitality" onAuthError={onAuthError}>
       {(data) =>
         data.items?.length ? (
           <ul className="user-list">
@@ -80,9 +82,9 @@ export function HospitalityTab({ eventId, onAuthError }) {
   );
 }
 
-export function AccommodationTab({ eventId, onAuthError, onGoToRegistration }) {
+export function AccommodationTab({ cache, onAuthError, onGoToRegistration }) {
   return (
-    <LazyTab eventId={eventId} resource="accommodation" onAuthError={onAuthError}>
+    <LazyTab cache={cache} resource="accommodation" onAuthError={onAuthError}>
       {(data) => {
         if (!data.registered) {
           return (
@@ -224,9 +226,9 @@ function ResultsView({ data }) {
   );
 }
 
-export function ResultsTab({ eventId, onAuthError }) {
+export function ResultsTab({ cache, onAuthError }) {
   return (
-    <LazyTab eventId={eventId} resource="results" onAuthError={onAuthError}>
+    <LazyTab cache={cache} resource="results" onAuthError={onAuthError}>
       {(data) => <ResultsView data={data} />}
     </LazyTab>
   );

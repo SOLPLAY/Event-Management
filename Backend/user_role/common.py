@@ -1,5 +1,6 @@
 """Helpers shared by the User role modules (events, event_tabs, payments)."""
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -25,6 +26,19 @@ STATUS_PENDING = "Pending"
 
 # PostgREST / Postgres error codes meaning "that table or column does not exist (yet)"
 MISSING_OBJECT_CODES = {"42P01", "42703", "PGRST204", "PGRST205"}
+
+
+# Every Supabase call is a network round trip, so independent queries are run side by side.
+# One shared pool for the whole module. Tasks passed to run_parallel must NOT call run_parallel
+# themselves (a task waiting on the same pool could deadlock it).
+_POOL = ThreadPoolExecutor(max_workers=24, thread_name_prefix="user-db")
+
+
+def run_parallel(*tasks):
+    """Run callables at the same time; results come back in the same order.
+    If any task raises, the first (in order) exception is re-raised."""
+    futures = [_POOL.submit(task) for task in tasks]
+    return [future.result() for future in futures]
 
 
 def require_user(user: AuthenticatedUser) -> None:
@@ -93,36 +107,48 @@ def fee_json(fee: Decimal | None):
     return int(fee) if fee == fee.to_integral_value() else float(fee)
 
 
-def read_fee(event_id: int) -> Decimal | None:
-    """The event's registration fee. 0 means free.
-
-    Returns None when the fee cannot be trusted: the event.fee column does not exist yet
-    (migration not run) or the stored value is invalid. Callers must not treat None as free.
-    """
-    try:
-        rows = (
-            supabase.table("event")
-            .select("fee")
-            .eq("event_id", event_id)
-            .limit(1)
-            .execute()
-            .data
-        )
-    except Exception as error:
-        if is_missing_object(error):
-            logger.warning("event.fee column is missing - run the feature 2 SQL migration")
-            return None
-        raise
-
-    value = rows[0].get("fee") if rows else None
+def parse_fee(value, event_id=None) -> Decimal | None:
+    """A stored fee as Decimal; None if missing or invalid (never guess "free")."""
     if value is None:
-        return None  # never guess "free"
+        return None
     try:
         fee = Decimal(str(value))
     except InvalidOperation:
         logger.warning("event %s has an invalid fee value: %r", event_id, value)
         return None
     return fee if fee >= 0 else None
+
+
+def read_fees(event_ids: list[int]) -> dict[int, Decimal | None]:
+    """Fees for several events in one query. If the fee column does not exist yet, every fee is None."""
+    if not event_ids:
+        return {}
+    try:
+        rows = (
+            supabase.table("event")
+            .select("event_id, fee")
+            .in_("event_id", event_ids)
+            .execute()
+            .data
+        )
+    except Exception as error:
+        if is_missing_object(error):
+            logger.warning("event.fee column is missing - run the feature 2 SQL migration")
+            return {event_id: None for event_id in event_ids}
+        raise
+    fees = {event_id: None for event_id in event_ids}
+    for row in rows:
+        fees[row["event_id"]] = parse_fee(row.get("fee"), row["event_id"])
+    return fees
+
+
+def read_fee(event_id: int) -> Decimal | None:
+    """The event's registration fee. 0 means free.
+
+    Returns None when the fee cannot be trusted: the event.fee column does not exist yet
+    (migration not run) or the stored value is invalid. Callers must not treat None as free.
+    """
+    return read_fees([event_id]).get(event_id)
 
 
 def get_visible_event(event_id: int) -> dict | None:

@@ -29,13 +29,14 @@ from user_role.common import (
     error_code,
     event_phase,
     fee_json,
+    get_visible_event,
     is_missing_object,
     logger,
     my_registration,
     parse_date,
     read_fee,
     require_user,
-    visible_event_or_404,
+    run_parallel,
 )
 
 router = APIRouter()
@@ -66,16 +67,20 @@ def _detect_image(data: bytes) -> tuple[str, str] | None:
     return None
 
 
-def _signed_url(path: str | None) -> str | None:
-    """Short-lived link to a private screenshot; None if it cannot be created."""
-    if not path:
-        return None
+def _signed_urls(paths: list[str]) -> dict[str, str | None]:
+    """Short-lived links to private screenshots, created with ONE storage call. A path that cannot be signed maps to None."""
+    paths = [path for path in dict.fromkeys(paths) if path]
+    if not paths:
+        return {}
     try:
-        response = supabase.storage.from_(BUCKET).create_signed_url(path, SIGNED_URL_SECONDS)
-        return response.get("signedURL") or response.get("signedUrl")
+        responses = supabase.storage.from_(BUCKET).create_signed_urls(paths, SIGNED_URL_SECONDS)
+        return {
+            item.get("path"): (item.get("signedURL") or item.get("signedUrl")) if not item.get("error") else None
+            for item in responses
+        }
     except Exception:
-        logger.warning("Could not create a signed URL for %s", path, exc_info=True)
-        return None
+        logger.warning("Could not create signed URLs for payment screenshots", exc_info=True)
+        return {}
 
 
 def _payment_account(event_id: int) -> dict | None:
@@ -115,28 +120,45 @@ def _submissions(registration_id: int) -> list[dict]:
         raise
 
 
-def _public_submission(row: dict) -> dict:
-    return {
-        "payment_id": row["payment_id"],
-        "transaction_id": row["transaction_id"],
-        "amount": row["amount"],
-        "payment_date": row["payment_date"],
-        "payment_method": row["payment_method"],
-        "status": row["status"],
-        "remarks": row.get("remarks"),
-        "submitted_on": row.get("created_date"),
-        "screenshot_url": _signed_url(row.get("screenshot_path")),
-    }
+def _public_submissions(rows: list[dict]) -> list[dict]:
+    links = _signed_urls([row.get("screenshot_path") for row in rows])
+    return [
+        {
+            "payment_id": row["payment_id"],
+            "transaction_id": row["transaction_id"],
+            "amount": row["amount"],
+            "payment_date": row["payment_date"],
+            "payment_method": row["payment_method"],
+            "status": row["status"],
+            "remarks": row.get("remarks"),
+            "submitted_on": row.get("created_date"),
+            "screenshot_url": links.get(row.get("screenshot_path")),
+        }
+        for row in rows
+    ]
 
 
-def _fee_or_error(event_id: int) -> Decimal:
-    fee = read_fee(event_id)
+def _fee_or_error(fee: Decimal | None) -> Decimal:
     if fee is None:
         raise HTTPException(
             status_code=503,
             detail="The registration fee for this event is not set up yet. Please contact the organiser.",
         )
     return fee
+
+
+def _load_context(event_id: int, person_id: int):
+    """event, fee, my registration and the payee account, fetched at the same moment."""
+    event, fee, registration, account = run_parallel(
+        lambda: get_visible_event(event_id),
+        lambda: read_fee(event_id),
+        lambda: my_registration(event_id, person_id),
+        lambda: _payment_account(event_id),
+    )
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    fee = _fee_or_error(fee)
+    return event, fee, registration, (account if fee > 0 else None)
 
 
 def _blocked_reason(event: dict, fee: Decimal, registration: dict, submissions: list[dict], account: dict | None) -> str | None:
@@ -164,13 +186,10 @@ def _blocked_reason(event: dict, fee: Decimal, registration: dict, submissions: 
 def get_payment_page(event_id: int, user: AuthenticatedUser = Depends(get_current_user)):
     require_user(user)
     try:
-        event = visible_event_or_404(event_id)
-        fee = _fee_or_error(event_id)
-        registration = my_registration(event_id, user.person_id)
+        event, fee, registration, account = _load_context(event_id, user.person_id)
         if not registration:
             raise HTTPException(status_code=409, detail="Register for this event first to see the payment page")
 
-        account = _payment_account(event_id) if fee > 0 else None
         submissions = _submissions(registration["registration_id"])
         reason = _blocked_reason(event, fee, registration, submissions, account)
     except HTTPException:
@@ -189,7 +208,7 @@ def get_payment_page(event_id: int, user: AuthenticatedUser = Depends(get_curren
             "account": account,
             "payment_methods": PAYMENT_METHODS,
             "max_image_mb": MAX_IMAGE_BYTES // (1024 * 1024),
-            "submissions": [_public_submission(row) for row in submissions],
+            "submissions": _public_submissions(submissions),
             "can_submit": reason is None,
             "blocked_reason": reason,
         },
@@ -276,13 +295,10 @@ def submit_payment_proof(event_id: int, body: PaymentProofIn, user: Authenticate
     require_user(user)
     uploaded_path = None
     try:
-        event = visible_event_or_404(event_id)
-        fee = _fee_or_error(event_id)
-        registration = my_registration(event_id, user.person_id)
+        event, fee, registration, account = _load_context(event_id, user.person_id)
         if not registration:
             raise HTTPException(status_code=409, detail="Register for this event first")
 
-        account = _payment_account(event_id) if fee > 0 else None
         submissions = _submissions(registration["registration_id"])
         reason = _blocked_reason(event, fee, registration, submissions, account)
         if reason:
