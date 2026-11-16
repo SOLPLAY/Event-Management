@@ -1,4 +1,4 @@
-"""User role - events catalogue (feature 1) and event registration (feature 2).
+"""User role - events catalogue (feature 1), registration (feature 2), event details (feature 3).
 
 Endpoints (all need a signed-in User):
     GET  /user/me                          - the signed-in user's name
@@ -6,143 +6,45 @@ Endpoints (all need a signed-in User):
     GET  /user/events/{event_id}           - one event with its sessions, fee and registration state
     POST /user/events/{event_id}/register  - register the signed-in user for the event
 
+The other tabs of the event page live in event_tabs.py (hospitality, accommodation, results)
+and payments.py (payment details and payment proof). They are mounted on this router below,
+so main.py only needs to include this one router.
+
 Registration rules:
     * Only a Published event that has not ended can be registered for.
     * A user can register once per event (the database also enforces this).
     * Free event (fee = 0)  -> registration is "Confirmed" straight away.
-    * Paid event  (fee > 0) -> registration is "Pending" until the payment is verified
-      (payment itself is a later feature).
+    * Paid event  (fee > 0) -> registration is "Pending"; the user then goes to the payment page,
+      submits proof of payment, and an organiser verifies it (which makes it "Confirmed").
     * The person registered is always the signed-in user - nothing in the request can change that.
 """
-import logging
 from datetime import date
-from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from auth_tokens import AuthenticatedUser, get_current_user
 from event_management import supabase
-
-logger = logging.getLogger("user_role")
+from user_role.common import (
+    EVENT_COLUMNS,
+    STATUS_CONFIRMED,
+    STATUS_PENDING,
+    VISIBLE_STATUSES,
+    error_code,
+    fee_json,
+    full_name,
+    get_visible_event,
+    is_missing_object,
+    logger,
+    my_registration,
+    parse_date,
+    phase_of,
+    read_fee,
+    registration_open,
+    require_user,
+    status_label,
+)
 
 router = APIRouter(prefix="/user", tags=["User"])
-
-# Login roles that may use these endpoints (compared case-insensitively).
-USER_ROLES = {"user", "users"}
-
-# event_status values a User may see. "Publish" is the legacy spelling that the
-# rest of the code base still tolerates.
-VISIBLE_STATUSES = ["Published", "Publish", "Completed"]
-
-EVENT_COLUMNS = "event_id, name, type, start_date, end_date, event_status"
-
-# registration.status values written by this module
-STATUS_CONFIRMED = "Confirmed"
-STATUS_PENDING = "Pending"
-
-
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
-def _require_user(user: AuthenticatedUser) -> None:
-    if user.role.strip().casefold() not in USER_ROLES:
-        raise HTTPException(status_code=403, detail="You are not allowed to perform this action")
-
-
-def _parse_date(value) -> date | None:
-    if not value:
-        return None
-    try:
-        return date.fromisoformat(str(value)[:10])
-    except ValueError:
-        return None
-
-
-def _phase(start: date | None, end: date | None, status: str) -> str:
-    """Upcoming / Ongoing / Ended, worked out from the dates (never written to the DB)."""
-    if status.strip().casefold() == "completed":
-        return "Ended"
-    today = date.today()
-    if end and end < today:
-        return "Ended"
-    if start and start > today:
-        return "Upcoming"
-    return "Ongoing"
-
-
-def _full_name(person: dict) -> str:
-    return " ".join(p for p in (person.get("first_name"), person.get("last_name")) if p)
-
-
-def _status_label(status: str | None) -> str:
-    return "Completed" if (status or "").strip().casefold() == "completed" else "Published"
-
-
-def _registration_open(event: dict) -> bool:
-    """Registration is open while the event is Published and has not ended."""
-    start = _parse_date(event.get("start_date"))
-    end = _parse_date(event.get("end_date"))
-    status = event.get("event_status") or ""
-    return _status_label(status) == "Published" and _phase(start, end, status) != "Ended"
-
-
-def _error_code(error: Exception) -> str:
-    return str(getattr(error, "code", "") or "")
-
-
-def _fee_json(fee: Decimal | None):
-    """Fee as a JSON number (None = not configured)."""
-    if fee is None:
-        return None
-    return int(fee) if fee == fee.to_integral_value() else float(fee)
-
-
-def _read_fee(event_id: int) -> Decimal | None:
-    """The event's registration fee. 0 means free.
-
-    Returns None when the fee cannot be trusted: the event.fee column does not exist yet
-    (migration not run) or the stored value is invalid. Callers must not treat None as free.
-    """
-    try:
-        rows = (
-            supabase.table("event")
-            .select("fee")
-            .eq("event_id", event_id)
-            .limit(1)
-            .execute()
-            .data
-        )
-    except Exception as error:
-        if _error_code(error) in {"42703", "PGRST204"}:  # undefined column
-            logger.warning("event.fee column is missing - run the feature 2 SQL migration")
-            return None
-        raise
-
-    value = rows[0].get("fee") if rows else None
-    if value is None:
-        return None  # never guess "free"
-    try:
-        fee = Decimal(str(value))
-    except InvalidOperation:
-        logger.warning("event %s has an invalid fee value: %r", event_id, value)
-        return None
-    return fee if fee >= 0 else None
-
-
-def _get_visible_event(event_id: int) -> dict | None:
-    """A non-deleted event that a User is allowed to see, or None."""
-    events = (
-        supabase.table("event")
-        .select(EVENT_COLUMNS)
-        .eq("event_id", event_id)
-        .in_("event_status", VISIBLE_STATUSES)
-        .eq("is_delete", False)
-        .limit(1)
-        .execute()
-        .data
-    )
-    return events[0] if events else None
 
 
 def _build_cards(events: list[dict], person_id: int) -> list[dict]:
@@ -185,7 +87,7 @@ def _build_cards(events: list[dict], person_id: int) -> list[dict]:
 
     organizers_by_event: dict[int, list[str]] = {}
     for row in organizer_rows:
-        name = _full_name(people_by_id.get(row["person_id"], {}))
+        name = full_name(people_by_id.get(row["person_id"], {}))
         if name:
             organizers_by_event.setdefault(row["event_id"], []).append(name)
 
@@ -204,8 +106,8 @@ def _build_cards(events: list[dict], person_id: int) -> list[dict]:
     for event in events:
         event_id = event["event_id"]
         type_row = type_by_event.get(event_id, {})
-        start = _parse_date(event.get("start_date"))
-        end = _parse_date(event.get("end_date"))
+        start = parse_date(event.get("start_date"))
+        end = parse_date(event.get("end_date"))
         registration = registration_by_event.get(event_id)
         cards.append(
             {
@@ -215,13 +117,40 @@ def _build_cards(events: list[dict], person_id: int) -> list[dict]:
                 "description": type_row.get("description") or "",
                 "start_date": start.isoformat() if start else None,
                 "end_date": end.isoformat() if end else None,
-                "event_status": _status_label(event.get("event_status")),
-                "phase": _phase(start, end, event.get("event_status") or ""),
+                "event_status": status_label(event.get("event_status")),
+                "phase": phase_of(start, end, event.get("event_status") or ""),
                 "organizers": organizers_by_event.get(event_id, []),
                 "my_registration": {"status": registration["status"]} if registration else None,
             }
         )
     return cards
+
+
+def _registration_summary(event_id: int, person_id: int, basic: dict) -> dict:
+    """status + amount paid + the state of the latest payment submission (if any)."""
+    summary = {**basic, "fee_paid": None, "payment_status": None}
+    registration = my_registration(event_id, person_id)
+    if not registration:
+        return summary
+    summary["status"] = registration["status"]
+    summary["fee_paid"] = registration.get("fee_paid")
+    try:
+        latest = (
+            supabase.table("payment_submission")
+            .select("payment_id, status")
+            .eq("registration_id", registration["registration_id"])
+            .eq("is_delete", False)
+            .order("payment_id", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        summary["payment_status"] = latest[0]["status"] if latest else None
+    except Exception as error:
+        if not is_missing_object(error):
+            raise
+        logger.warning("payment_submission table is missing - run the feature 3 SQL migration")
+    return summary
 
 
 def _order_cards(cards: list[dict]) -> list[dict]:
@@ -239,7 +168,7 @@ def _order_cards(cards: list[dict]) -> list[dict]:
 
 @router.get("/me")
 def get_me(user: AuthenticatedUser = Depends(get_current_user)):
-    _require_user(user)
+    require_user(user)
     try:
         rows = (
             supabase.table("person")
@@ -259,7 +188,7 @@ def get_me(user: AuthenticatedUser = Depends(get_current_user)):
         "data": {
             "person_id": user.person_id,
             "username": user.username,
-            "name": _full_name(person) or user.username,
+            "name": full_name(person) or user.username,
             "email_id": person.get("email_id"),
         },
     }
@@ -267,7 +196,7 @@ def get_me(user: AuthenticatedUser = Depends(get_current_user)):
 
 @router.get("/events")
 def list_events(user: AuthenticatedUser = Depends(get_current_user)):
-    _require_user(user)
+    require_user(user)
     try:
         events = (
             supabase.table("event")
@@ -288,9 +217,9 @@ def list_events(user: AuthenticatedUser = Depends(get_current_user)):
 
 @router.get("/events/{event_id}")
 def get_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)):
-    _require_user(user)
+    require_user(user)
     try:
-        event = _get_visible_event(event_id)
+        event = get_visible_event(event_id)
         if not event:
             # Same answer for "does not exist" and "not published yet".
             raise HTTPException(status_code=404, detail="Event not found")
@@ -305,7 +234,9 @@ def get_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)
             .execute()
             .data
         )
-        fee = _read_fee(event_id)
+        fee = read_fee(event_id)
+        if card["my_registration"]:
+            card["my_registration"] = _registration_summary(event_id, user.person_id, card["my_registration"])
     except HTTPException:
         raise
     except Exception:
@@ -317,8 +248,8 @@ def get_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)
         "data": {
             **card,
             "sessions": sessions,
-            "fee": _fee_json(fee),
-            "registration_open": _registration_open(event),
+            "fee": fee_json(fee),
+            "registration_open": registration_open(event),
         },
     }
 
@@ -326,18 +257,18 @@ def get_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)
 @router.post("/events/{event_id}/register", status_code=201)
 def register_for_event(event_id: int, user: AuthenticatedUser = Depends(get_current_user)):
     """Register the signed-in user for an event. Takes no request body on purpose."""
-    _require_user(user)
+    require_user(user)
     today = date.today().isoformat()
 
     try:
-        event = _get_visible_event(event_id)
+        event = get_visible_event(event_id)
         if not event:
             raise HTTPException(status_code=404, detail="Event not found")
 
-        if not _registration_open(event):
+        if not registration_open(event):
             raise HTTPException(status_code=409, detail="Registration is closed for this event")
 
-        fee = _read_fee(event_id)
+        fee = read_fee(event_id)
         if fee is None:
             raise HTTPException(
                 status_code=503,
@@ -400,7 +331,7 @@ def register_for_event(event_id: int, user: AuthenticatedUser = Depends(get_curr
                     .data
                 )
             except Exception as error:
-                if _error_code(error) == "23505":  # two clicks / two tabs at the same moment
+                if error_code(error) == "23505":  # two clicks / two tabs at the same moment
                     raise already
                 raise
             if not rows:
@@ -415,7 +346,7 @@ def register_for_event(event_id: int, user: AuthenticatedUser = Depends(get_curr
     if status == STATUS_CONFIRMED:
         message = "You are registered for this event."
     else:
-        message = "You are registered. Your registration stays pending until your payment is verified."
+        message = "You are registered. Complete the payment to confirm your place."
 
     return {
         "success": True,
@@ -423,7 +354,17 @@ def register_for_event(event_id: int, user: AuthenticatedUser = Depends(get_curr
             "registration_id": registration.get("registration_id"),
             "event_id": event_id,
             "status": status,
-            "fee": _fee_json(fee),
+            "fee": fee_json(fee),
             "message": message,
+            # tells the page where to go next: paid events continue to the payment page
+            "next_step": "payment" if status == STATUS_PENDING else None,
         },
     }
+
+
+# Other tabs of the event page (hospitality, accommodation, results, payment).
+from user_role.event_tabs import router as _event_tabs_router  # noqa: E402
+from user_role.payments import router as _payments_router  # noqa: E402
+
+router.include_router(_event_tabs_router)
+router.include_router(_payments_router)

@@ -94,3 +94,48 @@ export function formatFee(fee) {
   if (amount === 0) return "Free";
   return `₹${amount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
 }
+
+export function formatAmount(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return "—";
+  return `₹${Number(value).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+}
+
+// Today's date as YYYY-MM-DD in the user's own time zone (what <input type="date"> expects).
+export function todayLocalIso() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+// 1 -> "1st", 2 -> "2nd", 11 -> "11th" ...
+export function ordinal(number) {
+  const n = Number(number);
+  if (!Number.isInteger(n) || n < 1) return String(number ?? "");
+  const rest = n % 100;
+  if (rest >= 11 && rest <= 13) return `${n}th`;
+  return `${n}${{ 1: "st", 2: "nd", 3: "rd" }[n % 10] ?? "th"}`;
+}
+
+export function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("The file could not be read. Please choose it again."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// The event page tabs, in display order. "results" is only offered for Completed events.
+export const eventTabs = [
+  { id: "overview", label: "Overview" },
+  { id: "schedule", label: "Schedule" },
+  { id: "hospitality", label: "Hospitality" },
+  { id: "accommodation", label: "My accommodation" },
+  { id: "registration", label: "Registration & payment" },
+  { id: "results", label: "Results" },
+];
+
+export function visibleTabs(event) {
+  return eventTabs.filter((tab) => tab.id !== "results" || event?.event_status === "Completed");
+}

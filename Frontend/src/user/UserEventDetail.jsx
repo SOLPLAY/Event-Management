@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { formatEventDate } from "../eventApi";
-import { formatDateTime, formatFee, requestUserApi } from "./userApi";
+import { formatAmount, formatFee, requestUserApi, visibleTabs } from "./userApi";
+import {
+  AccommodationTab,
+  HospitalityTab,
+  ResultsTab,
+  ScheduleTab,
+} from "./UserEventTabs";
+import UserPaymentPage from "./UserPaymentPage";
 
 async function fetchEvent(eventId) {
   const result = await requestUserApi(`/events/${eventId}`);
@@ -10,7 +17,20 @@ async function fetchEvent(eventId) {
   return result.data;
 }
 
-function RegistrationPanel({ event, registering, onRegister }) {
+function PaymentStatusLine({ registration }) {
+  switch (registration.payment_status) {
+    case "Submitted":
+      return "Your payment proof has been submitted and is waiting for the organiser to verify it.";
+    case "Rejected":
+      return "Your last payment proof was rejected. Please check the reason and submit it again.";
+    case "Verified":
+      return "Your payment has been verified. Your place will be confirmed shortly.";
+    default:
+      return "You have not submitted your payment yet.";
+  }
+}
+
+function RegistrationTab({ event, registering, onRegister, onOpenPayment }) {
   const registration = event.my_registration;
   const fee = event.fee;
   const feeKnown = fee !== null && fee !== undefined;
@@ -18,16 +38,37 @@ function RegistrationPanel({ event, registering, onRegister }) {
 
   if (registration) {
     const confirmed = registration.status === "Confirmed";
+    const paymentButtonLabel =
+      registration.payment_status === "Rejected"
+        ? "Submit payment again"
+        : registration.payment_status === "Submitted" || registration.payment_status === "Verified"
+          ? "View payment details"
+          : "Go to payment page";
+
     return (
       <>
         <p className="user-registered">You are registered · {registration.status}</p>
-        <p className="user-detail__muted user-register__hint">
-          {confirmed
-            ? "Your place is confirmed."
-            : feeKnown && !isFree
-              ? `Your registration is pending until your payment of ${formatFee(fee)} is verified. Online payment is not available in this version yet.`
-              : "Your registration is pending."}
-        </p>
+        {confirmed ? (
+          <p className="user-detail__muted user-register__hint">
+            Your place is confirmed.
+            {Number(registration.fee_paid) > 0 && ` Amount paid: ${formatAmount(registration.fee_paid)}.`}
+          </p>
+        ) : feeKnown && !isFree ? (
+          <>
+            <p className="user-detail__muted user-register__hint">
+              Registration fee: <strong>{formatFee(fee)}</strong>. <PaymentStatusLine registration={registration} />
+            </p>
+            <button
+              className="nitt-admin__button nitt-admin__button--primary user-register__action"
+              type="button"
+              onClick={onOpenPayment}
+            >
+              {paymentButtonLabel}
+            </button>
+          </>
+        ) : (
+          <p className="user-detail__muted user-register__hint">Your registration is pending.</p>
+        )}
       </>
     );
   }
@@ -56,19 +97,65 @@ function RegistrationPanel({ event, registering, onRegister }) {
         onClick={onRegister}
         disabled={registering}
       >
-        {registering ? "Registering…" : "Register for this event"}
+        {registering ? "Registering…" : isFree ? "Register for this event" : "Register and continue to payment"}
       </button>
       {!isFree && (
         <p className="user-detail__muted user-register__hint">
-          Your registration will be pending until your payment is verified.
+          After registering you will be taken to a payment page where you can pay online and upload
+          your transaction details for the organiser to verify.
         </p>
       )}
     </div>
   );
 }
 
+function OverviewTab({ event }) {
+  return (
+    <>
+      <p className="user-detail__description">
+        {event.description || "No description has been provided for this event."}
+      </p>
+      <dl className="user-detail__facts">
+        <div>
+          <dt>Start date</dt>
+          <dd>{formatEventDate(event.start_date)}</dd>
+        </div>
+        <div>
+          <dt>End date</dt>
+          <dd>{formatEventDate(event.end_date)}</dd>
+        </div>
+        <div>
+          <dt>Registration fee</dt>
+          <dd>{formatFee(event.fee)}</dd>
+        </div>
+        <div>
+          <dt>Event type</dt>
+          <dd>{event.type || "Event"}</dd>
+        </div>
+        <div>
+          <dt>Organised by</dt>
+          <dd>{event.organizers?.length ? event.organizers.join(", ") : "Not listed"}</dd>
+        </div>
+        <div>
+          <dt>Your registration</dt>
+          <dd>{event.my_registration ? event.my_registration.status : "Not registered"}</dd>
+        </div>
+      </dl>
+    </>
+  );
+}
+
 // Mount this with key={eventId} so it starts fresh for every event.
-export default function UserEventDetail({ eventId, onBack, onAuthError }) {
+export default function UserEventDetail({
+  eventId,
+  tab,
+  showPayment,
+  onTabChange,
+  onOpenPayment,
+  onClosePayment,
+  onBack,
+  onAuthError,
+}) {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -101,6 +188,15 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
     };
   }, [eventId, onAuthError]);
 
+  // Re-read the event quietly (after a payment was submitted, or a 409). Keeps what is on screen on failure.
+  const refreshEvent = useCallback(async () => {
+    try {
+      setEvent(await fetchEvent(eventId));
+    } catch {
+      /* keep what is on screen */
+    }
+  }, [eventId]);
+
   async function handleRegister() {
     if (registering) return;
     setRegistering(true);
@@ -113,8 +209,15 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
       if (!registration?.status) {
         throw new Error("The server did not confirm the registration. Please check again.");
       }
-      setEvent((current) => ({ ...current, my_registration: { status: registration.status } }));
-      setRegisterNotice(registration.message || "You are registered for this event.");
+      setEvent((current) => ({
+        ...current,
+        my_registration: { status: registration.status, fee_paid: 0, payment_status: null },
+      }));
+      if (registration.next_step === "payment") {
+        onOpenPayment(); // paid event: straight to the payment page
+      } else {
+        setRegisterNotice(registration.message || "You are registered for this event.");
+      }
     } catch (requestError) {
       if (requestError.status === 401) {
         onAuthError();
@@ -123,26 +226,28 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
       setRegisterError(requestError.message);
       if (requestError.status === 409) {
         // Already registered (another tab) or registration just closed: show the true state.
-        try {
-          setEvent(await fetchEvent(eventId));
-        } catch {
-          /* keep what is on screen */
-        }
+        await refreshEvent();
       }
     } finally {
       setRegistering(false);
     }
   }
 
+  const tabs = event ? visibleTabs(event) : [];
+  const activeTab = tabs.some((item) => item.id === tab) ? tab : "overview";
+  const paymentAvailable = Boolean(event?.my_registration) && Number(event?.fee) > 0;
+
   return (
     <div className="user-detail">
-      <button
-        className="nitt-admin__button nitt-admin__button--quiet user-detail__back"
-        type="button"
-        onClick={onBack}
-      >
-        ← All events
-      </button>
+      {!showPayment && (
+        <button
+          className="nitt-admin__button nitt-admin__button--quiet user-detail__back"
+          type="button"
+          onClick={onBack}
+        >
+          ← All events
+        </button>
+      )}
 
       {loading && <p className="event-list-message">Loading event…</p>}
 
@@ -152,7 +257,29 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
         </p>
       )}
 
-      {!loading && event && (
+      {!loading && event && showPayment && paymentAvailable && (
+        <UserPaymentPage
+          eventId={eventId}
+          onBack={onClosePayment}
+          onAuthError={onAuthError}
+          onChanged={refreshEvent}
+        />
+      )}
+
+      {!loading && event && showPayment && !paymentAvailable && (
+        <article className="user-detail__panel">
+          <p className="user-detail__muted">
+            {event.my_registration
+              ? "This event is free, so there is nothing to pay."
+              : "Register for this event first to see the payment page."}
+          </p>
+          <button className="nitt-admin__button nitt-admin__button--quiet" type="button" onClick={onClosePayment}>
+            ← Back to event
+          </button>
+        </article>
+      )}
+
+      {!loading && event && !showPayment && (
         <article className="user-detail__panel">
           <div className="user-detail__topline">
             <span className={`user-phase user-phase--${event.phase.toLowerCase()}`}>
@@ -161,69 +288,68 @@ export default function UserEventDetail({ eventId, onBack, onAuthError }) {
             <span className="event-card__type">{event.type || "Event"}</span>
           </div>
           <h2 className="user-detail__title">{event.name}</h2>
-          <p className="user-detail__description">
-            {event.description || "No description has been provided for this event."}
-          </p>
 
-          <dl className="user-detail__facts">
-            <div>
-              <dt>Start date</dt>
-              <dd>{formatEventDate(event.start_date)}</dd>
-            </div>
-            <div>
-              <dt>End date</dt>
-              <dd>{formatEventDate(event.end_date)}</dd>
-            </div>
-            <div>
-              <dt>Registration fee</dt>
-              <dd>{formatFee(event.fee)}</dd>
-            </div>
-            <div>
-              <dt>Organised by</dt>
-              <dd>{event.organizers?.length ? event.organizers.join(", ") : "Not listed"}</dd>
-            </div>
-          </dl>
+          <div className="event-tabs user-tabs" role="tablist" aria-label="Event sections">
+            {tabs.map((item) => (
+              <button
+                key={item.id}
+                id={`tab-${item.id}`}
+                className={`event-tabs__tab${item.id === activeTab ? " event-tabs__tab--active" : ""}`}
+                type="button"
+                role="tab"
+                aria-selected={item.id === activeTab}
+                aria-controls="event-tabpanel"
+                onClick={() => onTabChange(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
 
-          <section className="user-detail__section" aria-labelledby="schedule-heading">
-            <h3 id="schedule-heading">Schedule</h3>
-            {event.sessions?.length ? (
-              <ol className="user-schedule">
-                {event.sessions.map((session) => (
-                  <li key={session.session_id}>
-                    <div className="user-schedule__time">
-                      {formatDateTime(session.start_time)} – {formatDateTime(session.end_time)}
-                    </div>
-                    <div className="user-schedule__title">{session.session_title}</div>
-                    <div className="user-schedule__meta">
-                      {[session.speaker_name, session.venue].filter(Boolean).join(" · ") ||
-                        "Details to be announced"}
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className="user-detail__muted">The schedule has not been announced yet.</p>
+          <div
+            id="event-tabpanel"
+            className="user-tabpanel"
+            role="tabpanel"
+            aria-labelledby={`tab-${activeTab}`}
+          >
+            {activeTab === "overview" && <OverviewTab event={event} />}
+            {activeTab === "schedule" && <ScheduleTab sessions={event.sessions} />}
+            {activeTab === "hospitality" && (
+              <HospitalityTab key="hospitality" eventId={eventId} onAuthError={onAuthError} />
             )}
-          </section>
-
-          <section className="user-detail__section" aria-labelledby="registration-heading">
-            <h3 id="registration-heading">Registration</h3>
-            {registerNotice && (
-              <p className="user-notice user-notice--success" role="status">
-                {registerNotice}
-              </p>
+            {activeTab === "accommodation" && (
+              <AccommodationTab
+                key="accommodation"
+                eventId={eventId}
+                onAuthError={onAuthError}
+                onGoToRegistration={() => onTabChange("registration")}
+              />
             )}
-            {registerError && (
-              <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
-                {registerError}
-              </p>
+            {activeTab === "registration" && (
+              <section aria-labelledby="registration-heading">
+                <h3 id="registration-heading" className="sr-only">Registration and payment</h3>
+                {registerNotice && (
+                  <p className="user-notice user-notice--success" role="status">
+                    {registerNotice}
+                  </p>
+                )}
+                {registerError && (
+                  <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
+                    {registerError}
+                  </p>
+                )}
+                <RegistrationTab
+                  event={event}
+                  registering={registering}
+                  onRegister={handleRegister}
+                  onOpenPayment={onOpenPayment}
+                />
+              </section>
             )}
-            <RegistrationPanel
-              event={event}
-              registering={registering}
-              onRegister={handleRegister}
-            />
-          </section>
+            {activeTab === "results" && (
+              <ResultsTab key="results" eventId={eventId} onAuthError={onAuthError} />
+            )}
+          </div>
         </article>
       )}
     </div>

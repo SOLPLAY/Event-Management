@@ -11,6 +11,8 @@ export default function UserDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedEventId = searchParams.get("event_id");
+  const tab = searchParams.get("tab") || "overview";
+  const showPayment = searchParams.get("page") === "payment";
 
   const [events, setEvents] = useState([]);
   const [profileName, setProfileName] = useState("");
@@ -90,6 +92,20 @@ export default function UserDashboard() {
   );
   const closeEvent = useCallback(() => setSearchParams({}), [setSearchParams]);
 
+  // Tab changes replace the history entry (Back leaves the event); the payment page is a real page (Back returns).
+  const changeTab = useCallback(
+    (nextTab) => setSearchParams({ event_id: selectedEventId, tab: nextTab }, { replace: true }),
+    [setSearchParams, selectedEventId]
+  );
+  const openPayment = useCallback(
+    () => setSearchParams({ event_id: selectedEventId, tab: "registration", page: "payment" }),
+    [setSearchParams, selectedEventId]
+  );
+  const closePayment = useCallback(
+    () => setSearchParams({ event_id: selectedEventId, tab: "registration" }),
+    [setSearchParams, selectedEventId]
+  );
+
   const displayName =
     profileName || window.sessionStorage.getItem("loginUsername") || "User";
 
@@ -128,6 +144,11 @@ export default function UserDashboard() {
           <UserEventDetail
             key={selectedEventId}
             eventId={selectedEventId}
+            tab={tab}
+            showPayment={showPayment}
+            onTabChange={changeTab}
+            onOpenPayment={openPayment}
+            onClosePayment={closePayment}
             onBack={closeEvent}
             onAuthError={signOut}
           />
