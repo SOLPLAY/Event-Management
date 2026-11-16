@@ -3,8 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { formatEventDate, requestEventApi } from "./eventApi";
 import { EVENT_WORKSPACE_SECTIONS } from "./eventWorkspaceSections";
 import EventAccommodation from "./EventAccommodation";
+import EventAdvertisement from "./EventAdvertisement";
 import EventEvaluationSection from "./EventEvaluationSection";
 import EventHospitality from "./EventHospitality";
+import EventReport from "./EventReport";
 import EventSessions from "./EventSessions";
 
 const placeholderCopy = {
@@ -24,16 +26,6 @@ function formatRegistrationFee(value) {
   })}`;
 }
 
-function safeExternalUrl(value) {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
 export default function EventWorkspace({ event, section }) {
   const navigate = useNavigate();
   const activeSection =
@@ -45,19 +37,6 @@ export default function EventWorkspace({ event, section }) {
     error: "",
   });
   const registrationsLoading = registrationsState.eventId !== event.event_id;
-  const [advertisementsState, setAdvertisementsState] = useState({
-    eventId: null,
-    records: [],
-    error: "",
-  });
-  const advertisementsLoading = advertisementsState.eventId !== event.event_id;
-  const [reportState, setReportState] = useState({
-    eventId: null,
-    report: null,
-    error: "",
-  });
-  const reportLoading = reportState.eventId !== event.event_id;
-
   useEffect(() => {
     if (activeSection !== "registrations") return undefined;
 
@@ -92,70 +71,6 @@ export default function EventWorkspace({ event, section }) {
     };
   }, [activeSection, event.event_id]);
 
-  useEffect(() => {
-    if (activeSection !== "advertisement") return undefined;
-
-    let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/advertisements`)
-      .then((result) => {
-        if (!Array.isArray(result.data)) {
-          throw new Error("The server response did not contain advertisement records.");
-        }
-        if (active) {
-          setAdvertisementsState({
-            eventId: event.event_id,
-            records: result.data,
-            error: "",
-          });
-        }
-      })
-      .catch((requestError) => {
-        if (active) {
-          setAdvertisementsState({
-            eventId: event.event_id,
-            records: [],
-            error: requestError.message,
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeSection, event.event_id]);
-
-  useEffect(() => {
-    if (activeSection !== "report") return undefined;
-
-    let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/report`)
-      .then((result) => {
-        if (result.data !== null && (typeof result.data !== "object" || Array.isArray(result.data))) {
-          throw new Error("The server response did not contain a valid event report.");
-        }
-        if (active) {
-          setReportState({
-            eventId: event.event_id,
-            report: result.data,
-            error: "",
-          });
-        }
-      })
-      .catch((requestError) => {
-        if (active) {
-          setReportState({
-            eventId: event.event_id,
-            report: null,
-            error: requestError.message,
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeSection, event.event_id]);
-
   if (activeSection !== "overview") {
     const page = EVENT_WORKSPACE_SECTIONS.find((item) => item.id === activeSection);
     if (activeSection === "accommodation") {
@@ -171,53 +86,7 @@ export default function EventWorkspace({ event, section }) {
     }
 
     if (activeSection === "report") {
-      const report = reportState.report;
-      const photographsUrl = safeExternalUrl(report?.photographs_url);
-      return (
-        <section className="event-workspace-panel" aria-labelledby="event-workspace-heading">
-          <div className="event-workspace-panel__eyebrow">{event.name}</div>
-          <h2 id="event-workspace-heading">{page.label}</h2>
-          <p>Event summary, attendance, and photographs.</p>
-          {reportState.error ? (
-            <p className="hospitality-message hospitality-message--error" role="alert">
-              {reportState.error}
-            </p>
-          ) : reportLoading ? (
-            <p className="hospitality-message" role="status">Loading event report…</p>
-          ) : report ? (
-            <dl className="event-overview-details event-report-details">
-              <div>
-                <dt>Report date</dt>
-                <dd>{formatEventDate(report.report_date)}</dd>
-              </div>
-              <div>
-                <dt>Total attendees</dt>
-                <dd>{report.total_attendees ?? "Not provided"}</dd>
-              </div>
-              <div className="event-overview-details__description">
-                <dt>Summary</dt>
-                <dd>{report.summary_text || "No summary provided."}</dd>
-              </div>
-              <div className="event-overview-details__description">
-                <dt>Photographs</dt>
-                <dd>
-                  {photographsUrl ? (
-                    <a href={photographsUrl} target="_blank" rel="noopener noreferrer">
-                      View event photographs
-                    </a>
-                  ) : report.photographs_url ? (
-                    "The photograph URL is invalid."
-                  ) : (
-                    "Not provided"
-                  )}
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="hospitality-message">No report has been added for this event yet.</p>
-          )}
-        </section>
-      );
+      return <EventReport key={event.event_id} event={event} />;
     }
 
     if (activeSection === "evaluation") {
@@ -225,45 +94,7 @@ export default function EventWorkspace({ event, section }) {
     }
 
     if (activeSection === "advertisement") {
-      return (
-        <section className="event-workspace-panel" aria-labelledby="event-workspace-heading">
-          <div className="event-workspace-panel__eyebrow">{event.name}</div>
-          <h2 id="event-workspace-heading">{page.label}</h2>
-          <p>Promotion platforms, target audiences, and planned publish dates.</p>
-          {advertisementsState.error ? (
-            <p className="hospitality-message hospitality-message--error" role="alert">
-              {advertisementsState.error}
-            </p>
-          ) : advertisementsLoading ? (
-            <p className="hospitality-message" role="status">Loading advertisement details…</p>
-          ) : advertisementsState.records.length ? (
-            <div className="hospitality-grid">
-              {advertisementsState.records.map((advertisement) => (
-                <article className="hospitality-card" key={advertisement.ad_id}>
-                  <dl className="hospitality-card__details">
-                    <div>
-                      <dt>Platform</dt>
-                      <dd>{advertisement.platform}</dd>
-                    </div>
-                    <div>
-                      <dt>Target audience</dt>
-                      <dd>{advertisement.target_audience || "Not specified"}</dd>
-                    </div>
-                    <div>
-                      <dt>Publish date</dt>
-                      <dd>{formatEventDate(advertisement.publish_date)}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="hospitality-message">
-              No advertisements have been added for this event.
-            </p>
-          )}
-        </section>
-      );
+      return <EventAdvertisement key={event.event_id} event={event} />;
     }
 
     if (activeSection === "registrations") {

@@ -91,6 +91,23 @@ Event organizers can add, edit, and remove hospitality plans from each event's
 Hospitality tab. Removed plans are soft-deleted and no additional schema change
 is required.
 
+The Event report tab summarizes active registrations and verified payment
+submission amounts, registration `fee_paid` totals, session attendance marks,
+unique students marked present, distinct session speakers, sponsors by level,
+evaluations and score/rating distributions, and active hospitality plans.
+Attendance charts count marks per session; the headline present-student count
+counts each registered student once if marked present in at least one session.
+
+Before using advertisement and sponsor management, run
+`Documentation/advertisement_sponsors_media.sql` in the Supabase SQL Editor.
+This adds sponsor records, advertisement media metadata, and a private
+`event-advertisements` Storage bucket. Organizers can manage sponsor details and
+advertisement schedules from the Advertisement tab, and upload JPEG, PNG, WebP,
+GIF, MP4, WebM, or MOV media (up to 50 MB). Files are stored in Supabase Storage;
+only their paths and metadata are stored in Postgres. Keep
+`SUPABASE_SERVICE_ROLE_KEY` only in `Backend/.env`; the backend uses it for
+private sponsor access and media upload, deletion, and signed viewing links.
+
 The login form accepts either the account username or numeric `login_id`. The
 backend verifies the password against the `login` table; currently only the
 System Administrator, Super Admin, and Event Organizer roles have configured
@@ -108,7 +125,8 @@ Event organizers can create events for Super Admin approval, edit pending
 events, edit and resubmit rejected events, and publish approved events. Approved
 events cannot be edited. Event categories are selected from Hackathon, Seminar,
 Workshop, Competition, and Symposium; descriptions are stored in
-`event_type.description`. Super Admins can
+`event_type.description`. Organizers set a non-negative registration fee in
+rupees when submitting or editing an event; enter `0` for a free event. Super Admins can
 review all events and approve or reject pending requests. Organizer event lists
 are scoped to the authenticated user's `person_id` through `event_organizer`.
 Published events become completed after their end date; published and

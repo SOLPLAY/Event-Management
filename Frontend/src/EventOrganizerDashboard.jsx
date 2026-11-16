@@ -19,6 +19,7 @@ const emptyForm = {
   description: "",
   start_date: "",
   end_date: "",
+  fee: "0",
 };
 
 export default function EventOrganizerDashboard() {
@@ -92,6 +93,7 @@ export default function EventOrganizerDashboard() {
                 description: event.description ?? "",
                 start_date: event.start_date ?? "",
                 end_date: event.end_date ?? "",
+                fee: event.fee === null || event.fee === undefined ? "0" : String(event.fee),
               });
             } else {
               setSearchParams({ tab: "events" }, { replace: true });
@@ -137,6 +139,7 @@ export default function EventOrganizerDashboard() {
       description: event.description ?? "",
       start_date: event.start_date ?? "",
       end_date: event.end_date ?? "",
+      fee: event.fee === null || event.fee === undefined ? "0" : String(event.fee),
     });
     setSearchParams({ tab: "update", event_id: String(event.event_id) });
     setError("");
@@ -447,6 +450,20 @@ export default function EventOrganizerDashboard() {
                     required
                     disabled={saving}
                   />
+                </label>
+                <label className="nitt-admin__field">
+                  <span>Registration fee (₹)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="9999999999.99"
+                    step="0.01"
+                    value={form.fee}
+                    onChange={(event) => updateField("fee", event.target.value)}
+                    required
+                    disabled={saving}
+                  />
+                  <small>Enter 0 for a free event.</small>
                 </label>
               </div>
               <div className="nitt-admin__dialog-actions">

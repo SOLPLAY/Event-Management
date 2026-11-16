@@ -2,10 +2,11 @@ const API_URL = "/api/event-management";
 
 export async function requestEventApi(path, options = {}) {
   const token = window.sessionStorage.getItem("accessToken");
+  const isFormData = options.body instanceof FormData;
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
     headers: {
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
@@ -86,6 +87,7 @@ export function eventPayload(form) {
     description: form.description.trim(),
     start_date: form.start_date,
     end_date: form.end_date,
+    fee: form.fee,
   });
 }
 

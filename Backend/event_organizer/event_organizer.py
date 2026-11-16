@@ -1,8 +1,11 @@
 from datetime import date, datetime
 import logging
+from decimal import Decimal, InvalidOperation
+import re
+import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field, model_validator
 
 from auth_tokens import AuthenticatedUser, get_current_user
@@ -21,6 +24,8 @@ from event_management import (
 
 router = APIRouter(prefix="/event-management", tags=["Event Organizer"])
 logger = logging.getLogger(__name__)
+ADVERTISEMENT_BUCKET = "event-advertisements"
+MAX_ADVERTISEMENT_MEDIA_BYTES = 50 * 1024 * 1024
 
 
 class SessionDetails(BaseModel):
@@ -62,6 +67,42 @@ class HospitalityDetails(BaseModel):
         if not self.meal_type:
             raise ValueError("Meal type is required")
         self.vendor_name = self.vendor_name.strip()
+        return self
+
+
+class AdvertisementDetails(BaseModel):
+    platform: str = Field(min_length=1, max_length=150)
+    target_audience: str = Field(default="", max_length=500)
+    publish_date: date
+
+    @model_validator(mode="after")
+    def normalize_advertisement(self):
+        self.platform = self.platform.strip()
+        self.target_audience = self.target_audience.strip()
+        if not self.platform:
+            raise ValueError("Platform is required")
+        return self
+
+
+class SponsorDetails(BaseModel):
+    sponsor_name: str = Field(min_length=1, max_length=250)
+    sponsorship_level: str = Field(default="Sponsor", min_length=1, max_length=100)
+    contact_person: str | None = Field(default=None, max_length=250)
+    contact_email: str | None = Field(default=None, max_length=320)
+    contact_phone: str | None = Field(default=None, max_length=50)
+    sponsorship_amount: Decimal | None = Field(default=None, ge=0)
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def normalize_sponsor(self):
+        self.sponsor_name = self.sponsor_name.strip()
+        self.sponsorship_level = self.sponsorship_level.strip()
+        if not self.sponsor_name or not self.sponsorship_level:
+            raise ValueError("Sponsor name and sponsorship level are required")
+        for field_name in ("contact_person", "contact_email", "contact_phone", "notes"):
+            value = getattr(self, field_name)
+            if value is not None:
+                setattr(self, field_name, value.strip() or None)
         return self
 
 
@@ -969,13 +1010,32 @@ def get_event_advertisements(
         _get_owned_event(event_id, user)
         advertisements = (
             supabase.table("advertisement")
-            .select("ad_id, platform, target_audience, publish_date")
+            .select(
+                "ad_id, platform, target_audience, publish_date, "
+                "media_path, media_content_type, media_file_name"
+            )
             .eq("event_id", event_id)
             .or_("is_delete.eq.false,is_delete.is.null")
             .order("publish_date")
             .execute()
             .data
         )
+        media_paths = list(
+            dict.fromkeys(
+                row["media_path"]
+                for row in advertisements
+                if row.get("media_path")
+            )
+        )
+        signed_urls = _advertisement_signed_urls(media_paths)
+        for advertisement in advertisements:
+            media_path = advertisement.get("media_path")
+            advertisement["media_url"] = signed_urls.get(media_path)
+            advertisement["media_error"] = (
+                "The stored media file is missing or inaccessible."
+                if media_path and not advertisement["media_url"]
+                else None
+            )
         return {
             "success": True,
             "count": len(advertisements),
@@ -984,9 +1044,576 @@ def get_event_advertisements(
     except HTTPException:
         raise
     except Exception as error:
+        logger.exception("Failed to fetch advertisements for event %s", event_id)
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch event advertisements",
+        ) from error
+
+
+def _advertisement_signed_urls(
+    paths: list[str],
+    *,
+    strict: bool = False,
+) -> dict[str, str]:
+    if not paths:
+        return {}
+    if service_supabase is None:
+        if strict:
+            raise HTTPException(
+                status_code=503,
+                detail="Advertisement media storage is not configured",
+            )
+        logger.warning("Cannot sign advertisement media: storage is not configured")
+        return {}
+    try:
+        results = service_supabase.storage.from_(ADVERTISEMENT_BUCKET).create_signed_urls(
+            paths,
+            3600,
+        )
+    except Exception:
+        if strict:
+            raise
+        logger.exception("Could not create signed URLs for advertisement media")
+        return {}
+    signed_urls = {}
+    for result in results:
+        signed_url = result.get("signedURL") or result.get("signedUrl")
+        if result.get("error") or not result.get("path") or not signed_url:
+            if strict:
+                raise RuntimeError("Could not create a signed URL for advertisement media")
+            logger.warning(
+                "Could not create signed URL for advertisement media path %s: %s",
+                result.get("path"),
+                result.get("error") or "invalid signing response",
+            )
+            continue
+        signed_urls[result["path"]] = signed_url
+    return signed_urls
+
+
+def _get_owned_advertisement(
+    event_id: int,
+    ad_id: int,
+    user: AuthenticatedUser,
+) -> dict:
+    _get_owned_event(event_id, user)
+    records = (
+        supabase.table("advertisement")
+        .select("ad_id, event_id, media_path, media_content_type, media_file_name")
+        .eq("event_id", event_id)
+        .eq("ad_id", ad_id)
+        .or_("is_delete.eq.false,is_delete.is.null")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not records:
+        raise HTTPException(status_code=404, detail="Active advertisement not found")
+    return records[0]
+
+
+def _read_advertisement_upload(media: UploadFile) -> tuple[bytes, str, str, str]:
+    data = media.file.read(MAX_ADVERTISEMENT_MEDIA_BYTES + 1)
+    if len(data) > MAX_ADVERTISEMENT_MEDIA_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Image and video files must be 50 MB or smaller",
+        )
+
+    detected_type = None
+    extension = None
+    if data.startswith(b"\xff\xd8\xff"):
+        detected_type, extension = "image/jpeg", "jpg"
+    elif data.startswith(b"\x89PNG\r\n\x1a\n"):
+        detected_type, extension = "image/png", "png"
+    elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        detected_type, extension = "image/webp", "webp"
+    elif data.startswith((b"GIF87a", b"GIF89a")):
+        detected_type, extension = "image/gif", "gif"
+    elif len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand == b"qt  ":
+            detected_type, extension = "video/quicktime", "mov"
+        elif brand in {b"isom", b"iso2", b"mp41", b"mp42", b"avc1", b"M4V ", b"dash"}:
+            detected_type, extension = "video/mp4", "mp4"
+    elif data.startswith(b"\x1a\x45\xdf\xa3"):
+        detected_type, extension = "video/webm", "webm"
+
+    if not detected_type:
+        raise HTTPException(
+            status_code=415,
+            detail="Use a JPEG, PNG, WebP, GIF, MP4, WebM, or MOV file",
+        )
+    declared_type = (media.content_type or "").casefold()
+    if declared_type not in ("", "application/octet-stream", detected_type):
+        raise HTTPException(
+            status_code=415,
+            detail="The uploaded file type does not match its contents",
+        )
+    original_name = (media.filename or f"poster.{extension}").rsplit("/", 1)[-1]
+    original_name = original_name.rsplit("\\", 1)[-1]
+    original_name = re.sub(r"[\x00-\x1f\x7f]", "", original_name).strip()
+    if not original_name:
+        original_name = f"poster.{extension}"
+    return data, detected_type, extension, original_name[:255]
+
+
+@router.post("/organizer/events/{event_id}/advertisements", status_code=201)
+def create_event_advertisement(
+    event_id: int,
+    details: AdvertisementDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_event(event_id, user)
+        now = datetime.now()
+        inserted = (
+            supabase.table("advertisement")
+            .insert(
+                {
+                    **details.model_dump(mode="json"),
+                    "event_id": event_id,
+                    "is_delete": False,
+                    "created_by": user.username,
+                    "created_date": now.date().isoformat(),
+                    "created_time": now.time().replace(microsecond=0).isoformat(),
+                }
+            )
+            .execute()
+            .data
+        )
+        if not inserted:
+            raise RuntimeError("The advertisement insert returned no record")
+        return {"success": True, "data": inserted[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Failed to create advertisement for event %s", event_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create event advertisement",
+        ) from error
+
+
+@router.put("/organizer/events/{event_id}/advertisements/{ad_id}")
+def update_event_advertisement(
+    event_id: int,
+    ad_id: int,
+    details: AdvertisementDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_advertisement(event_id, ad_id, user)
+        updated = (
+            supabase.table("advertisement")
+            .update(
+                {
+                    **details.model_dump(mode="json"),
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("event_id", event_id)
+            .eq("ad_id", ad_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Active advertisement not found")
+        return {"success": True, "data": updated[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to update advertisement %s for event %s",
+            ad_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update event advertisement",
+        ) from error
+
+
+@router.delete("/organizer/events/{event_id}/advertisements/{ad_id}")
+def delete_event_advertisement(
+    event_id: int,
+    ad_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        advertisement = _get_owned_advertisement(event_id, ad_id, user)
+        if advertisement.get("media_path") and service_supabase is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Advertisement media storage is not configured",
+            )
+        deleted = (
+            supabase.table("advertisement")
+            .update({"is_delete": True, **_audit_fields(user.username)})
+            .eq("event_id", event_id)
+            .eq("ad_id", ad_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Active advertisement not found")
+        warning = None
+        if advertisement.get("media_path"):
+            try:
+                service_supabase.storage.from_(ADVERTISEMENT_BUCKET).remove(
+                    [advertisement["media_path"]]
+                )
+            except Exception:
+                logger.exception(
+                    "Advertisement %s was deleted, but its media cleanup failed",
+                    ad_id,
+                )
+                warning = "Advertisement was deleted, but its stored media could not be removed."
+        return {
+            "success": True,
+            "message": "Advertisement deleted",
+            "warning": warning,
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to delete advertisement %s for event %s",
+            ad_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete event advertisement",
+        ) from error
+
+
+@router.post("/organizer/events/{event_id}/advertisements/{ad_id}/media")
+def upload_event_advertisement_media(
+    event_id: int,
+    ad_id: int,
+    media: UploadFile = File(...),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    uploaded_path = None
+    try:
+        advertisement = _get_owned_advertisement(event_id, ad_id, user)
+        if service_supabase is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Advertisement media storage is not configured",
+            )
+        data, content_type, extension, original_name = _read_advertisement_upload(media)
+        uploaded_path = f"{event_id}/{ad_id}/{uuid.uuid4().hex}.{extension}"
+        service_supabase.storage.from_(ADVERTISEMENT_BUCKET).upload(
+            uploaded_path,
+            data,
+            {"content-type": content_type},
+        )
+        signed_url = _advertisement_signed_urls([uploaded_path], strict=True).get(uploaded_path)
+        if not signed_url:
+            raise RuntimeError("The uploaded advertisement media could not be signed")
+        updated = (
+            supabase.table("advertisement")
+            .update(
+                {
+                    "media_path": uploaded_path,
+                    "media_content_type": content_type,
+                    "media_file_name": original_name,
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("event_id", event_id)
+            .eq("ad_id", ad_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        if not updated:
+            raise RuntimeError("The advertisement media update returned no record")
+        old_path = advertisement.get("media_path")
+        warning = None
+        if old_path:
+            try:
+                service_supabase.storage.from_(ADVERTISEMENT_BUCKET).remove([old_path])
+            except Exception:
+                logger.warning("Failed to remove replaced advertisement media", exc_info=True)
+                warning = "New media was saved, but the replaced file could not be removed."
+        return {
+            "success": True,
+            "data": {
+                **updated[0],
+                "media_url": signed_url,
+            },
+            "warning": warning,
+        }
+    except HTTPException:
+        if uploaded_path and service_supabase is not None:
+            try:
+                service_supabase.storage.from_(ADVERTISEMENT_BUCKET).remove([uploaded_path])
+            except Exception:
+                logger.warning("Failed to clean up rejected advertisement upload", exc_info=True)
+        raise
+    except Exception as error:
+        if uploaded_path and service_supabase is not None:
+            try:
+                service_supabase.storage.from_(ADVERTISEMENT_BUCKET).remove([uploaded_path])
+            except Exception:
+                logger.warning("Failed to clean up incomplete advertisement upload", exc_info=True)
+        logger.exception(
+            "Failed to upload media for advertisement %s in event %s",
+            ad_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to upload advertisement media",
+        ) from error
+    finally:
+        media.file.close()
+
+
+@router.delete("/organizer/events/{event_id}/advertisements/{ad_id}/media")
+def delete_event_advertisement_media(
+    event_id: int,
+    ad_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        advertisement = _get_owned_advertisement(event_id, ad_id, user)
+        path = advertisement.get("media_path")
+        if not path:
+            raise HTTPException(status_code=404, detail="Advertisement has no media file")
+        if service_supabase is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Advertisement media storage is not configured",
+            )
+        updated = (
+            supabase.table("advertisement")
+            .update(
+                {
+                    "media_path": None,
+                    "media_content_type": None,
+                    "media_file_name": None,
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("event_id", event_id)
+            .eq("ad_id", ad_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        if not updated:
+            raise RuntimeError("The advertisement media delete returned no record")
+        try:
+            service_supabase.storage.from_(ADVERTISEMENT_BUCKET).remove([path])
+        except Exception:
+            logger.exception(
+                "Advertisement media metadata cleared, but file cleanup failed for %s",
+                path,
+            )
+            return {
+                "success": True,
+                "message": "Advertisement media unlinked",
+                "warning": "Media was unlinked, but its storage file could not be removed.",
+            }
+        return {"success": True, "message": "Advertisement media deleted", "warning": None}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to delete media for advertisement %s in event %s",
+            ad_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete advertisement media",
+        ) from error
+
+
+def _sponsor_table():
+    if service_supabase is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Sponsor storage is not configured",
+        )
+    return service_supabase.table("event_sponsor")
+
+
+def _get_owned_sponsor(
+    event_id: int,
+    sponsor_id: int,
+    user: AuthenticatedUser,
+) -> None:
+    _get_owned_event(event_id, user)
+    sponsors = (
+        _sponsor_table()
+        .select("sponsor_id")
+        .eq("event_id", event_id)
+        .eq("sponsor_id", sponsor_id)
+        .eq("is_delete", False)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not sponsors:
+        raise HTTPException(status_code=404, detail="Active event sponsor not found")
+
+
+@router.get("/organizer/events/{event_id}/sponsors")
+def get_event_sponsors(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_event(event_id, user)
+        sponsors = (
+            _sponsor_table()
+            .select(
+                "sponsor_id, event_id, sponsor_name, sponsorship_level, "
+                "contact_person, contact_email, contact_phone, "
+                "sponsorship_amount, notes"
+            )
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .order("sponsor_name")
+            .execute()
+            .data
+        )
+        return {"success": True, "count": len(sponsors), "data": sponsors}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Failed to fetch sponsors for event %s", event_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch event sponsors",
+        ) from error
+
+
+@router.post("/organizer/events/{event_id}/sponsors", status_code=201)
+def create_event_sponsor(
+    event_id: int,
+    details: SponsorDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_event(event_id, user)
+        now = datetime.now()
+        inserted = (
+            _sponsor_table()
+            .insert(
+                {
+                    **details.model_dump(mode="json"),
+                    "event_id": event_id,
+                    "is_delete": False,
+                    "created_by": user.username,
+                    "created_date": now.date().isoformat(),
+                    "created_time": now.time().replace(microsecond=0).isoformat(),
+                }
+            )
+            .execute()
+            .data
+        )
+        if not inserted:
+            raise RuntimeError("The sponsor insert returned no record")
+        return {"success": True, "data": inserted[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Failed to create sponsor for event %s", event_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create event sponsor",
+        ) from error
+
+
+@router.put("/organizer/events/{event_id}/sponsors/{sponsor_id}")
+def update_event_sponsor(
+    event_id: int,
+    sponsor_id: int,
+    details: SponsorDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_sponsor(event_id, sponsor_id, user)
+        updated = (
+            _sponsor_table()
+            .update(
+                {
+                    **details.model_dump(mode="json"),
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("event_id", event_id)
+            .eq("sponsor_id", sponsor_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Active event sponsor not found")
+        return {"success": True, "data": updated[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to update sponsor %s for event %s",
+            sponsor_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update event sponsor",
+        ) from error
+
+
+@router.delete("/organizer/events/{event_id}/sponsors/{sponsor_id}")
+def delete_event_sponsor(
+    event_id: int,
+    sponsor_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_sponsor(event_id, sponsor_id, user)
+        deleted = (
+            _sponsor_table()
+            .update({"is_delete": True, **_audit_fields(user.username)})
+            .eq("event_id", event_id)
+            .eq("sponsor_id", sponsor_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Active event sponsor not found")
+        return {"success": True, "message": "Event sponsor deleted"}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception(
+            "Failed to delete sponsor %s for event %s",
+            sponsor_id,
+            event_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to delete event sponsor",
         ) from error
 
 
@@ -1229,7 +1856,7 @@ def get_event_report(
 ):
     _require_role(user, "Event Organizer")
     try:
-        _get_owned_event(event_id, user)
+        event = _get_owned_event(event_id, user)
         reports = (
             supabase.table("event_report")
             .select(
@@ -1242,13 +1869,278 @@ def get_event_report(
             .execute()
             .data
         )
+        registrations = (
+            supabase.table("registration")
+            .select("registration_id, status, fee_paid")
+            .eq("event_id", event_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        registration_ids = [record["registration_id"] for record in registrations]
+        verified_payments = []
+        if registration_ids:
+            payment_client = service_supabase or supabase
+            verified_payments = (
+                payment_client.table("payment_submission")
+                .select("amount")
+                .in_("registration_id", registration_ids)
+                .eq("status", "Verified")
+                .execute()
+                .data
+            )
+        sessions = (
+            supabase.table("session")
+            .select("session_id, speaker_name")
+            .eq("event_id", event_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        session_ids = [record["session_id"] for record in sessions]
+
+        attendance = []
+        if registration_ids and session_ids:
+            if service_supabase is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Attendance statistics are not configured on the backend.",
+                )
+            attendance = (
+                service_supabase.table("session_attendance")
+                .select("session_id, registration_id, attendance_status")
+                .in_("session_id", session_ids)
+                .in_("registration_id", registration_ids)
+                .execute()
+                .data
+            )
+
+        evaluations = []
+        if registration_ids:
+            evaluations = (
+                supabase.table("evaluation")
+                .select(
+                    "registration_id, score, feedback_rating, certificate_issued"
+                )
+                .eq("event_id", event_id)
+                .in_("registration_id", registration_ids)
+                .or_("is_delete.eq.false,is_delete.is.null")
+                .execute()
+                .data
+            )
+
+        sponsors = (
+            _sponsor_table()
+            .select("sponsor_id, sponsorship_level")
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        hospitality = (
+            supabase.table("hospitality")
+            .select("hospitality_id")
+            .eq("event_id", event_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+
+        registration_status_counts: dict[str, int] = {}
+        fee_paid_total = Decimal("0")
+        for registration in registrations:
+            status = str(registration.get("status") or "Unspecified").strip() or "Unspecified"
+            registration_status_counts[status] = (
+                registration_status_counts.get(status, 0) + 1
+            )
+            try:
+                fee_paid_total += Decimal(str(registration.get("fee_paid") or 0))
+            except (InvalidOperation, TypeError, ValueError):
+                logger.warning(
+                    "Ignoring invalid fee_paid value for a registration in event %s",
+                    event_id,
+                )
+
+        fees_collected = Decimal("0")
+        for payment in verified_payments:
+            try:
+                fees_collected += Decimal(str(payment.get("amount") or 0))
+            except (InvalidOperation, TypeError, ValueError):
+                logger.warning(
+                    "Ignoring invalid verified payment amount for event %s",
+                    event_id,
+                )
+
+        attendance_by_status = {"Present": 0, "Absent": 0}
+        present_registration_ids = set()
+        absent_registration_ids = set()
+        marked_attendance_pairs = set()
+        for record in attendance:
+            status = str(record.get("attendance_status") or "").strip().casefold()
+            if status not in {"present", "absent"}:
+                continue
+            label = status.capitalize()
+            attendance_by_status[label] += 1
+            marked_attendance_pairs.add(
+                (record["session_id"], record["registration_id"])
+            )
+            if label == "Present":
+                present_registration_ids.add(record["registration_id"])
+            else:
+                absent_registration_ids.add(record["registration_id"])
+        total_attendance_slots = len(session_ids) * len(registration_ids)
+
+        score_values = []
+        feedback_rating_counts: dict[int, int] = {}
+        certificates_issued = 0
+        for evaluation in evaluations:
+            if evaluation.get("certificate_issued"):
+                certificates_issued += 1
+            score = evaluation.get("score")
+            if score is not None:
+                try:
+                    number = float(score)
+                    if number == number and abs(number) != float("inf"):
+                        score_values.append(number)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Ignoring invalid evaluation score for event %s",
+                        event_id,
+                    )
+            rating = evaluation.get("feedback_rating")
+            if rating is not None:
+                try:
+                    normalized_rating = int(rating)
+                    feedback_rating_counts[normalized_rating] = (
+                        feedback_rating_counts.get(normalized_rating, 0) + 1
+                    )
+                except (TypeError, ValueError):
+                    logger.warning(
+                        "Ignoring invalid feedback rating for event %s",
+                        event_id,
+                    )
+
+        score_distribution = []
+        if score_values:
+            minimum_score = min(score_values)
+            maximum_score = max(score_values)
+            if minimum_score == maximum_score:
+                score_distribution.append(
+                    {"label": f"{minimum_score:g}", "count": len(score_values)}
+                )
+            else:
+                bucket_count = 5
+                bucket_width = (maximum_score - minimum_score) / bucket_count
+                counts = [0] * bucket_count
+                for score in score_values:
+                    bucket_index = min(
+                        int((score - minimum_score) / bucket_width),
+                        bucket_count - 1,
+                    )
+                    counts[bucket_index] += 1
+                for index, count in enumerate(counts):
+                    lower = minimum_score + bucket_width * index
+                    upper = (
+                        maximum_score
+                        if index == bucket_count - 1
+                        else minimum_score + bucket_width * (index + 1)
+                    )
+                    score_distribution.append(
+                        {
+                            "label": f"{lower:g}-{upper:g}",
+                            "count": count,
+                        }
+                    )
+
+        sponsor_levels: dict[str, int] = {}
+        for sponsor in sponsors:
+            level = str(sponsor.get("sponsorship_level") or "Unspecified").strip()
+            level = level or "Unspecified"
+            sponsor_levels[level] = sponsor_levels.get(level, 0) + 1
+
+        speaker_names = sorted(
+            {
+                str(session["speaker_name"]).strip()
+                for session in sessions
+                if session.get("speaker_name") and str(session["speaker_name"]).strip()
+            },
+            key=str.casefold,
+        )
+        score_average = (
+            sum(score_values) / len(score_values) if score_values else None
+        )
+        report = reports[0] if reports else {}
         return {
             "success": True,
-            "data": reports[0] if reports else None,
+            "data": {
+                **report,
+                "event": {
+                    "event_id": event_id,
+                    "name": event.get("name"),
+                    "start_date": event.get("start_date"),
+                    "end_date": event.get("end_date"),
+                    "registration_fee": event.get("fee"),
+                },
+                "registrations": {
+                    "total": len(registrations),
+                    "status_counts": [
+                        {"label": status, "count": count}
+                        for status, count in sorted(
+                            registration_status_counts.items(),
+                            key=lambda item: item[0].casefold(),
+                        )
+                    ],
+                    "fees_collected": float(fees_collected),
+                    "verified_payments_count": len(verified_payments),
+                    "fee_paid_total": float(fee_paid_total),
+                },
+                "attendance": {
+                    "present_students": len(present_registration_ids),
+                    "absent_students": len(absent_registration_ids),
+                    "present_session_marks": attendance_by_status["Present"],
+                    "absent_session_marks": attendance_by_status["Absent"],
+                    "unmarked_session_slots": max(
+                        total_attendance_slots - len(marked_attendance_pairs),
+                        0,
+                    ),
+                    "total_session_slots": total_attendance_slots,
+                },
+                "sessions": {
+                    "total": len(sessions),
+                    "speakers_count": len(speaker_names),
+                    "speaker_names": speaker_names,
+                },
+                "sponsors": {
+                    "total": len(sponsors),
+                    "by_level": [
+                        {"label": level, "count": count}
+                        for level, count in sorted(
+                            sponsor_levels.items(),
+                            key=lambda item: item[0].casefold(),
+                        )
+                    ],
+                },
+                "evaluations": {
+                    "total": len(evaluations),
+                    "scored_count": len(score_values),
+                    "highest_score": max(score_values) if score_values else None,
+                    "average_score": round(score_average, 2)
+                    if score_average is not None
+                    else None,
+                    "score_distribution": score_distribution,
+                    "feedback_ratings": [
+                        {"label": str(rating), "count": count}
+                        for rating, count in sorted(feedback_rating_counts.items())
+                    ],
+                    "certificates_issued": certificates_issued,
+                },
+                "hospitality_plans": len(hospitality),
+            },
         }
     except HTTPException:
         raise
     except Exception as error:
+        logger.exception("Failed to build event report for event %s", event_id)
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch the event report",
@@ -1271,6 +2163,7 @@ def create_event(
                     "type": details.type,
                     "start_date": details.start_date.isoformat(),
                     "end_date": details.end_date.isoformat(),
+                    "fee": format(details.fee, "f"),
                     "event_status": "Pending",
                     "is_delete": False,
                     "created_by": user.username,
@@ -1338,6 +2231,7 @@ def update_event(
                     "type": details.type,
                     "start_date": details.start_date.isoformat(),
                     "end_date": details.end_date.isoformat(),
+                    "fee": format(details.fee, "f"),
                     "event_status": resubmitted_status,
                     **_audit_fields(user.username),
                 }

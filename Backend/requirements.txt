@@ -23,6 +23,7 @@ propcache==0.5.4
 pycparser==3.0
 pydantic==2.13.5
 pydantic_core==2.46.5
+python-multipart>=0.0.18,<1.0
 PyJWT==2.15.1
 python-dotenv==1.2.4
 realtime==2.32.0

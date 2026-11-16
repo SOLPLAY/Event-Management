@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 import os
 
@@ -47,6 +48,7 @@ class EventDetails(BaseModel):
     description: str = Field(default="", max_length=5000)
     start_date: date
     end_date: date
+    fee: Decimal = Field(default=Decimal("0"), ge=0, max_digits=12, decimal_places=2)
 
     @model_validator(mode="after")
     def validate_details(self):
