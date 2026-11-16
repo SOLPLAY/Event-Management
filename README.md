@@ -68,10 +68,19 @@ Additional database technologies may be explored as the project develops.
 
 1. From `Backend`, install dependencies with `py -m pip install -r requirements.txt`.
 2. Configure `Backend/.env` with `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
-   `COUCHBASE_CONNECTION_STRING`, `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`,
-   `COUCHBASE_BUCKET`, `COUCHBASE_SCOPE` and `COUCHBASE_COLLECTION`.
+   `SUPABASE_SERVICE_ROLE_KEY`, `COUCHBASE_CONNECTION_STRING`,
+   `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, `COUCHBASE_BUCKET`,
+   `COUCHBASE_SCOPE` and `COUCHBASE_COLLECTION`.
 3. From `Backend`, start the API with `uvicorn main:app --reload` (port 8000).
 4. From `Frontend`, run `npm install` and `npm run dev`.
+
+Before using accommodation requests, run
+`Documentation/accommodation_schema.sql` in the Supabase SQL Editor. Add one
+`room` row per room with its building, room number, bed capacity, and active
+state. If existing accommodation assignments predate the `room_id` column,
+rerun the legacy room-linking update in that SQL file after adding those rooms.
+Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment; it is used for
+server-side room inventory reads and the accommodation approval function.
 
 The login form accepts either the account username or numeric `login_id`. The
 backend verifies the password against the `login` table; currently only the

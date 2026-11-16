@@ -2,14 +2,17 @@
 
     GET /user/events/{event_id}/hospitality    - meals / hospitality planned for the event
     GET /user/events/{event_id}/accommodation  - the signed-in user's own accommodation booking
+    POST /user/events/{event_id}/accommodation - request a stay for a confirmed registration
     GET /user/events/{event_id}/results        - my evaluation, winners and the event report
                                                  (only once the event is Completed)
 
 Mounted on the main user router by events.py (paths below are relative to /user).
 """
 import re
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, model_validator
 
 from auth_tokens import AuthenticatedUser, get_current_user
 from event_management import supabase
@@ -21,12 +24,24 @@ from user_role.common import (
     logger,
     my_registration,
     require_user,
+    registration_open,
     run_parallel,
 )
 
 router = APIRouter()
 
 MAX_PHOTOS = 24
+
+
+class AccommodationRequest(BaseModel):
+    check_in_date: date
+    check_out_date: date
+
+    @model_validator(mode="after")
+    def validate_stay(self):
+        if self.check_out_date <= self.check_in_date:
+            raise ValueError("Check-out date must be after check-in date")
+        return self
 
 
 def _optional_rows(label: str, query_fn) -> list[dict]:
@@ -91,9 +106,12 @@ def get_accommodation(event_id: int, user: AuthenticatedUser = Depends(get_curre
         if registration:
             rows = (
                 supabase.table("accommodation")
-                .select("accommodation_id, building_name, room_number, check_in_date, check_out_date")
+                .select(
+                    "accommodation_id, request_status, room_id, building_name, "
+                    "room_number, check_in_date, check_out_date"
+                )
                 .eq("registration_id", registration["registration_id"])  # the caller's own registration only
-                .eq("is_delete", False)
+                .or_("is_delete.eq.false,is_delete.is.null")
                 .limit(1)
                 .execute()
                 .data
@@ -113,6 +131,130 @@ def get_accommodation(event_id: int, user: AuthenticatedUser = Depends(get_curre
             "accommodation": booking,
         },
     }
+
+
+@router.post("/events/{event_id}/accommodation", status_code=201)
+def request_accommodation(
+    event_id: int,
+    request: AccommodationRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    require_user(user)
+    try:
+        event, registration = run_parallel(
+            lambda: get_visible_event(event_id),
+            lambda: my_registration(event_id, user.person_id),
+        )
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        if not registration_open(event):
+            raise HTTPException(
+                status_code=409,
+                detail="Accommodation requests are closed for this event",
+            )
+        if not registration:
+            raise HTTPException(
+                status_code=409,
+                detail="Register for this event before requesting accommodation",
+            )
+        if registration["status"] != "Confirmed":
+            raise HTTPException(
+                status_code=409,
+                detail="Your event registration must be confirmed before requesting accommodation",
+            )
+
+        event_start = date.fromisoformat(str(event["start_date"])[:10])
+        event_end = date.fromisoformat(str(event["end_date"])[:10])
+        if request.check_in_date > event_end or request.check_out_date < event_start:
+            raise HTTPException(
+                status_code=422,
+                detail="The requested stay must overlap the event dates",
+            )
+
+        existing = (
+            supabase.table("accommodation")
+            .select("accommodation_id, request_status")
+            .eq("registration_id", registration["registration_id"])
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .order("accommodation_id", desc=True)
+            .execute()
+            .data
+        )
+        if any(
+            row.get("request_status") in {"Pending", "Approved"} for row in existing
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="An active accommodation request already exists",
+            )
+        rejected_request = next(
+            (row for row in existing if row.get("request_status") == "Rejected"),
+            None,
+        )
+
+        request_data = {
+            "check_in_date": request.check_in_date.isoformat(),
+            "check_out_date": request.check_out_date.isoformat(),
+            "request_status": "Pending",
+            "room_id": None,
+            "building_name": None,
+            "room_number": None,
+            "updated_by": user.username,
+            "updated_date": date.today().isoformat(),
+        }
+        if rejected_request:
+            rows = (
+                supabase.table("accommodation")
+                .update(request_data)
+                .eq("accommodation_id", rejected_request["accommodation_id"])
+                .eq("request_status", "Rejected")
+                .or_("is_delete.eq.false,is_delete.is.null")
+                .execute()
+                .data
+            )
+            if not rows:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The accommodation request changed; refresh and try again",
+                )
+        else:
+            request_data.update(
+                {
+                    "registration_id": registration["registration_id"],
+                    "is_delete": False,
+                    "created_by": user.username,
+                    "created_date": date.today().isoformat(),
+                }
+            )
+            rows = supabase.table("accommodation").insert(request_data).execute().data
+            if not rows:
+                raise RuntimeError("The accommodation request insert returned no record")
+
+        return {
+            "success": True,
+            "data": {
+                "registered": True,
+                "registration_status": registration["status"],
+                "accommodation": rows[0],
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        if getattr(error, "code", None) == "23505":
+            raise HTTPException(
+                status_code=409,
+                detail="An active accommodation request already exists",
+            ) from error
+        logger.exception(
+            "Could not create accommodation request for event %s person %s",
+            event_id,
+            user.person_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to submit your accommodation request right now",
+        ) from error
 
 
 @router.get("/events/{event_id}/results")

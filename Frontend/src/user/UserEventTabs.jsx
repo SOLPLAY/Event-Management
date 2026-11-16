@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatEventDate } from "../eventApi";
-import { formatDateTime, ordinal } from "./userApi";
+import { formatDateTime, ordinal, requestUserApi } from "./userApi";
 
 // Shows one tab's data. It comes from the event's cache (see createTabCache), so a tab that was
 // prefetched or opened before appears instantly. Mount it with a key per tab.
@@ -59,6 +59,14 @@ function LazyTab({ cache, resource, onAuthError, children }) {
   return children(state.data);
 }
 
+function nextLocalDate(value) {
+  if (!value) return "";
+  const date = new Date(`${value}T00:00:00`);
+  date.setDate(date.getDate() + 1);
+  const pad = (part) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export function HospitalityTab({ cache, onAuthError }) {
   return (
     <LazyTab cache={cache} resource="hospitality" onAuthError={onAuthError}>
@@ -82,51 +90,195 @@ export function HospitalityTab({ cache, onAuthError }) {
   );
 }
 
-export function AccommodationTab({ cache, onAuthError, onGoToRegistration }) {
+function AccommodationContent({
+  cache,
+  data,
+  event,
+  onAuthError,
+  onGoToRegistration,
+}) {
+  const [accommodationData, setAccommodationData] = useState(data);
+  const [dates, setDates] = useState({
+    check_in_date: event.start_date ?? "",
+    check_out_date:
+      event.start_date === event.end_date && event.end_date
+        ? nextLocalDate(event.end_date)
+        : event.end_date ?? "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const accommodation = accommodationData.accommodation;
+  const requestStatus = accommodation?.request_status;
+
+  async function submitRequest(submitEvent) {
+    submitEvent.preventDefault();
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await requestUserApi(`/events/${event.event_id}/accommodation`, {
+        method: "POST",
+        body: JSON.stringify(dates),
+      });
+      if (!result.data || typeof result.data !== "object") {
+        throw new Error("The server response did not contain the accommodation request.");
+      }
+      setAccommodationData(result.data);
+      cache.invalidate("accommodation");
+      setNotice("Your accommodation request was submitted for approval.");
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        onAuthError();
+        return;
+      }
+      setError(requestError.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <LazyTab cache={cache} resource="accommodation" onAuthError={onAuthError}>
-      {(data) => {
-        if (!data.registered) {
-          return (
+    <>
+      {error && <p className="user-notice user-notice--error" role="alert">{error}</p>}
+      {notice && <p className="user-notice user-notice--success" role="status">{notice}</p>}
+      {!accommodationData.registered ? (
+        <p className="user-detail__muted">
+          You are not registered for this event, so you cannot request accommodation yet.{" "}
+          <button className="user-linkbutton" type="button" onClick={onGoToRegistration}>
+            Go to registration
+          </button>
+        </p>
+      ) : requestStatus === "Approved" ? (
+        <>
+          <p className="accommodation-request-status accommodation-request-status--approved">
+            Accommodation approved
+          </p>
+          <dl className="user-detail__facts">
+            <div>
+              <dt>Building</dt>
+              <dd>{accommodation.building_name || "To be announced"}</dd>
+            </div>
+            <div>
+              <dt>Room</dt>
+              <dd>{accommodation.room_number || "To be announced"}</dd>
+            </div>
+            <div>
+              <dt>Check-in</dt>
+              <dd>{formatEventDate(accommodation.check_in_date)}</dd>
+            </div>
+            <div>
+              <dt>Check-out</dt>
+              <dd>{formatEventDate(accommodation.check_out_date)}</dd>
+            </div>
+          </dl>
+        </>
+      ) : requestStatus === "Pending" ? (
+        <>
+          <p className="accommodation-request-status accommodation-request-status--pending">
+            Your accommodation request is awaiting organizer review.
+          </p>
+          <dl className="user-detail__facts">
+            <div>
+              <dt>Check-in</dt>
+              <dd>{formatEventDate(accommodation.check_in_date)}</dd>
+            </div>
+            <div>
+              <dt>Check-out</dt>
+              <dd>{formatEventDate(accommodation.check_out_date)}</dd>
+            </div>
+          </dl>
+        </>
+      ) : (
+        <>
+          {requestStatus === "Rejected" && (
+            <p className="accommodation-request-status accommodation-request-status--rejected">
+              Your previous accommodation request was rejected. You may submit another request.
+            </p>
+          )}
+          {accommodationData.registration_status !== "Confirmed" ? (
             <p className="user-detail__muted">
-              You are not registered for this event, so there is no accommodation for you.{" "}
+              Your event registration must be confirmed before you can request accommodation.{" "}
               <button className="user-linkbutton" type="button" onClick={onGoToRegistration}>
                 Go to registration
               </button>
             </p>
-          );
-        }
-        if (!data.accommodation) {
-          return (
-            <p className="user-detail__muted">
-              No accommodation has been assigned to you for this event.
-              {data.registration_status !== "Confirmed" &&
-                " Accommodation is usually assigned after your registration is confirmed."}
-            </p>
-          );
-        }
-        const stay = data.accommodation;
-        return (
-          <dl className="user-detail__facts">
-            <div>
-              <dt>Building</dt>
-              <dd>{stay.building_name || "To be announced"}</dd>
-            </div>
-            <div>
-              <dt>Room</dt>
-              <dd>{stay.room_number || "To be announced"}</dd>
-            </div>
-            <div>
-              <dt>Check-in</dt>
-              <dd>{formatEventDate(stay.check_in_date)}</dd>
-            </div>
-            <div>
-              <dt>Check-out</dt>
-              <dd>{formatEventDate(stay.check_out_date)}</dd>
-            </div>
-          </dl>
-        );
-      }}
+          ) : (
+            <form className="accommodation-request-form" onSubmit={submitRequest}>
+              <p className="user-detail__muted">
+                Choose your stay dates. The stay must overlap the event dates and will be
+                reviewed based on room availability.
+              </p>
+              <label className="nitt-admin__field">
+                <span>Check-in</span>
+                <input
+                  type="date"
+                  max={event.end_date || undefined}
+                  value={dates.check_in_date}
+                  onChange={(changeEvent) =>
+                    setDates((current) => ({
+                      ...current,
+                      check_in_date: changeEvent.target.value,
+                    }))
+                  }
+                  required
+                  disabled={saving}
+                />
+              </label>
+              <label className="nitt-admin__field">
+                <span>Check-out</span>
+                <input
+                  type="date"
+                  min={
+                    dates.check_in_date
+                      ? nextLocalDate(dates.check_in_date)
+                      : event.start_date || undefined
+                  }
+                  value={dates.check_out_date}
+                  onChange={(changeEvent) =>
+                    setDates((current) => ({
+                      ...current,
+                      check_out_date: changeEvent.target.value,
+                    }))
+                  }
+                  required
+                  disabled={saving}
+                />
+              </label>
+              <div className="accommodation-request-form__actions">
+                <button
+                  className="nitt-admin__button nitt-admin__button--primary"
+                  type="submit"
+                  disabled={saving || !dates.check_in_date || !dates.check_out_date}
+                >
+                  {saving ? "Submitting…" : "Request accommodation"}
+                </button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+export function AccommodationTab({
+  cache,
+  event,
+  onAuthError,
+  onGoToRegistration,
+}) {
+  return (
+    <LazyTab cache={cache} resource="accommodation" onAuthError={onAuthError}>
+      {(data) => (
+        <AccommodationContent
+          cache={cache}
+          data={data}
+          event={event}
+          onAuthError={onAuthError}
+          onGoToRegistration={onGoToRegistration}
+        />
+      )}
     </LazyTab>
   );
 }

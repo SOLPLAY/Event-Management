@@ -866,6 +866,42 @@ button {
   line-height: 1.5;
 }
 
+.event-sessions-form {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 7px;
+  background: #fcfcfa;
+}
+
+.event-evaluation-form {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 7px;
+  background: #fcfcfa;
+}
+
+.event-evaluation-form h3 {
+  margin: 0 0 16px;
+  color: var(--nitt-ink);
+  font-size: 16px;
+}
+
+.event-sessions-form h3 {
+  margin: 0 0 16px;
+  color: var(--nitt-ink);
+  font-size: 16px;
+}
+
+.event-sessions-form__actions,
+.event-session-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .hospitality-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
@@ -878,6 +914,57 @@ button {
   border: 1px solid var(--nitt-line);
   border-radius: 7px;
   background: #fcfcfa;
+}
+
+.accommodation-request-card__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.accommodation-request-card__heading h3 {
+  margin: 0;
+  color: var(--nitt-ink);
+  font-size: 15px;
+}
+
+.accommodation-request-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.accommodation-request-status--pending {
+  background: #fff3d9;
+  color: #825b17;
+}
+
+.accommodation-request-status--approved {
+  background: #e4f2e9;
+  color: #286847;
+}
+
+.accommodation-request-status--rejected {
+  background: #fae9e6;
+  color: #8c3029;
+}
+
+.accommodation-request-card__actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.accommodation-request-card__buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .hospitality-card__details {
@@ -953,6 +1040,23 @@ button {
 
 .registration-table tbody tr:last-child td {
   border-bottom: 0;
+}
+
+.evaluation-certificate {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  align-self: end;
+  min-height: 43px;
+}
+
+.evaluation-certificate input {
+  width: auto;
+  min-height: auto;
+}
+
+.evaluation-certificate > span {
+  margin: 0;
 }
 
 .event-workspace-placeholder {

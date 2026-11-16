@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { formatEventDate, requestEventApi } from "./eventApi";
-import { formatDateTime } from "./user/userApi";
 import { EVENT_WORKSPACE_SECTIONS } from "./eventWorkspaceSections";
+import EventAccommodation from "./EventAccommodation";
+import EventEvaluationSection from "./EventEvaluationSection";
+import EventSessions from "./EventSessions";
 
 const placeholderCopy = {
   accommodation: "Manage accommodation planning and arrangements for this event.",
@@ -31,6 +34,7 @@ function safeExternalUrl(value) {
 }
 
 export default function EventWorkspace({ event, section }) {
+  const navigate = useNavigate();
   const activeSection =
     EVENT_WORKSPACE_SECTIONS.find((item) => item.id === section)?.id ?? "overview";
   const [hospitalityState, setHospitalityState] = useState({
@@ -46,30 +50,12 @@ export default function EventWorkspace({ event, section }) {
     error: "",
   });
   const registrationsLoading = registrationsState.eventId !== event.event_id;
-  const [sessionsState, setSessionsState] = useState({
-    eventId: null,
-    records: [],
-    error: "",
-  });
-  const sessionsLoading = sessionsState.eventId !== event.event_id;
-  const [accommodationState, setAccommodationState] = useState({
-    eventId: null,
-    records: [],
-    error: "",
-  });
-  const accommodationLoading = accommodationState.eventId !== event.event_id;
   const [advertisementsState, setAdvertisementsState] = useState({
     eventId: null,
     records: [],
     error: "",
   });
   const advertisementsLoading = advertisementsState.eventId !== event.event_id;
-  const [evaluationsState, setEvaluationsState] = useState({
-    eventId: null,
-    records: [],
-    error: "",
-  });
-  const evaluationsLoading = evaluationsState.eventId !== event.event_id;
   const [reportState, setReportState] = useState({
     eventId: null,
     report: null,
@@ -144,70 +130,6 @@ export default function EventWorkspace({ event, section }) {
   }, [activeSection, event.event_id]);
 
   useEffect(() => {
-    if (activeSection !== "overview") return undefined;
-
-    let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/sessions`)
-      .then((result) => {
-        if (!Array.isArray(result.data)) {
-          throw new Error("The server response did not contain session records.");
-        }
-        if (active) {
-          setSessionsState({
-            eventId: event.event_id,
-            records: result.data,
-            error: "",
-          });
-        }
-      })
-      .catch((requestError) => {
-        if (active) {
-          setSessionsState({
-            eventId: event.event_id,
-            records: [],
-            error: requestError.message,
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeSection, event.event_id]);
-
-  useEffect(() => {
-    if (activeSection !== "accommodation") return undefined;
-
-    let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/accommodation`)
-      .then((result) => {
-        if (!Array.isArray(result.data)) {
-          throw new Error("The server response did not contain accommodation records.");
-        }
-        if (active) {
-          setAccommodationState({
-            eventId: event.event_id,
-            records: result.data,
-            error: "",
-          });
-        }
-      })
-      .catch((requestError) => {
-        if (active) {
-          setAccommodationState({
-            eventId: event.event_id,
-            records: [],
-            error: requestError.message,
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeSection, event.event_id]);
-
-  useEffect(() => {
     if (activeSection !== "advertisement") return undefined;
 
     let active = true;
@@ -227,38 +149,6 @@ export default function EventWorkspace({ event, section }) {
       .catch((requestError) => {
         if (active) {
           setAdvertisementsState({
-            eventId: event.event_id,
-            records: [],
-            error: requestError.message,
-          });
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeSection, event.event_id]);
-
-  useEffect(() => {
-    if (activeSection !== "evaluation") return undefined;
-
-    let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/evaluations`)
-      .then((result) => {
-        if (!Array.isArray(result.data)) {
-          throw new Error("The server response did not contain evaluation records.");
-        }
-        if (active) {
-          setEvaluationsState({
-            eventId: event.event_id,
-            records: result.data,
-            error: "",
-          });
-        }
-      })
-      .catch((requestError) => {
-        if (active) {
-          setEvaluationsState({
             eventId: event.event_id,
             records: [],
             error: requestError.message,
@@ -305,6 +195,14 @@ export default function EventWorkspace({ event, section }) {
 
   if (activeSection !== "overview") {
     const page = EVENT_WORKSPACE_SECTIONS.find((item) => item.id === activeSection);
+    if (activeSection === "accommodation") {
+      return <EventAccommodation event={event} />;
+    }
+
+    if (activeSection === "sessions") {
+      return <EventSessions event={event} />;
+    }
+
     if (activeSection === "report") {
       const report = reportState.report;
       const photographsUrl = safeExternalUrl(report?.photographs_url);
@@ -356,53 +254,7 @@ export default function EventWorkspace({ event, section }) {
     }
 
     if (activeSection === "evaluation") {
-      return (
-        <section className="event-workspace-panel" aria-labelledby="event-workspace-heading">
-          <div className="event-workspace-panel__eyebrow">{event.name}</div>
-          <h2 id="event-workspace-heading">{page.label}</h2>
-          <p>Participant scores, feedback ratings, and certificate status.</p>
-          {evaluationsState.error ? (
-            <p className="hospitality-message hospitality-message--error" role="alert">
-              {evaluationsState.error}
-            </p>
-          ) : evaluationsLoading ? (
-            <p className="hospitality-message" role="status">Loading evaluation details…</p>
-          ) : evaluationsState.records.length ? (
-            <div className="registration-table-wrap">
-              <table className="registration-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Student</th>
-                    <th scope="col">Score</th>
-                    <th scope="col">Feedback rating</th>
-                    <th scope="col">Certificate</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {evaluationsState.records.map((record) => (
-                    <tr key={record.evaluation_id}>
-                      <td>{record.person_name}</td>
-                      <td>{record.score ?? "Not scored"}</td>
-                      <td>{record.feedback_rating ?? "Not rated"}</td>
-                      <td>
-                        {record.certificate_issued === true
-                          ? "Issued"
-                          : record.certificate_issued === false
-                            ? "Not issued"
-                            : "Not recorded"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="hospitality-message">
-              No evaluation records have been added for this event.
-            </p>
-          )}
-        </section>
-      );
+      return <EventEvaluationSection key={event.event_id} event={event} />;
     }
 
     if (activeSection === "advertisement") {
@@ -447,56 +299,6 @@ export default function EventWorkspace({ event, section }) {
       );
     }
 
-    if (activeSection === "accommodation") {
-      return (
-        <section className="event-workspace-panel" aria-labelledby="event-workspace-heading">
-          <div className="event-workspace-panel__eyebrow">{event.name}</div>
-          <h2 id="event-workspace-heading">{page.label}</h2>
-          <p>Room assignments and stay dates for students registered for this event.</p>
-          {accommodationState.error ? (
-            <p className="hospitality-message hospitality-message--error" role="alert">
-              {accommodationState.error}
-            </p>
-          ) : accommodationLoading ? (
-            <p className="hospitality-message" role="status">Loading accommodation details…</p>
-          ) : accommodationState.records.length ? (
-            <div className="hospitality-grid">
-              {accommodationState.records.map((record) => (
-                <article className="hospitality-card" key={record.accommodation_id}>
-                  <dl className="hospitality-card__details">
-                    <div>
-                      <dt>Student</dt>
-                      <dd>{record.person_name}</dd>
-                    </div>
-                    <div>
-                      <dt>Building</dt>
-                      <dd>{record.building_name}</dd>
-                    </div>
-                    <div>
-                      <dt>Room</dt>
-                      <dd>{record.room_number || "Not assigned"}</dd>
-                    </div>
-                    <div>
-                      <dt>Check-in</dt>
-                      <dd>{formatDateTime(record.check_in_date)}</dd>
-                    </div>
-                    <div>
-                      <dt>Check-out</dt>
-                      <dd>{formatDateTime(record.check_out_date)}</dd>
-                    </div>
-                  </dl>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="hospitality-message">
-              No accommodation assignments have been added for this event.
-            </p>
-          )}
-        </section>
-      );
-    }
-
     if (activeSection === "registrations") {
       return (
         <section className="event-workspace-panel" aria-labelledby="event-workspace-heading">
@@ -518,6 +320,7 @@ export default function EventWorkspace({ event, section }) {
                     <th scope="col">Registration date</th>
                     <th scope="col">Status</th>
                     <th scope="col">Registration fee</th>
+                    <th scope="col">Evaluation</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -527,6 +330,19 @@ export default function EventWorkspace({ event, section }) {
                       <td>{formatEventDate(record.registration_date)}</td>
                       <td>{record.status}</td>
                       <td>{formatRegistrationFee(registrationsState.eventFee)}</td>
+                      <td>
+                        <button
+                          className="nitt-admin__button nitt-admin__button--quiet"
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              `/event-organizer?tab=workspace&event_id=${event.event_id}&section=evaluation&registration_id=${record.registration_id}`
+                            )
+                          }
+                        >
+                          Evaluate
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -628,33 +444,6 @@ export default function EventWorkspace({ event, section }) {
           <dd>{event.description || "No description provided."}</dd>
         </div>
       </dl>
-      <section className="event-session-section" aria-labelledby="event-session-heading">
-        <h3 id="event-session-heading">Sessions</h3>
-        {sessionsState.error ? (
-          <p className="hospitality-message hospitality-message--error" role="alert">
-            {sessionsState.error}
-          </p>
-        ) : sessionsLoading ? (
-          <p className="hospitality-message" role="status">Loading session details…</p>
-        ) : sessionsState.records.length ? (
-          <ol className="event-session-list">
-            {sessionsState.records.map((session) => (
-              <li className="event-session-card" key={session.session_id}>
-                <div className="event-session-card__time">
-                  {formatDateTime(session.start_time)} – {formatDateTime(session.end_time)}
-                </div>
-                <h4>{session.session_title}</h4>
-                <p>
-                  {[session.speaker_name, session.venue].filter(Boolean).join(" · ") ||
-                    "Speaker and venue not provided"}
-                </p>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className="hospitality-message">No sessions have been added to this event yet.</p>
-        )}
-      </section>
     </section>
   );
 }

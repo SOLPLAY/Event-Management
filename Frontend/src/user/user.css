@@ -135,6 +135,29 @@
   font-size: 13px;
 }
 
+.accommodation-request-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.accommodation-request-form > p,
+.accommodation-request-form__actions {
+  grid-column: 1 / -1;
+}
+
+.accommodation-request-form__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.user-notice--error {
+  border: 1px solid #e8c9c4;
+  background: #fff5f3;
+  color: #8c3029;
+}
+
 .user-schedule {
   display: flex;
   margin: 0;

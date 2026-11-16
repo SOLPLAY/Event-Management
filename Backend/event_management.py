@@ -13,11 +13,17 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Supabase credentials are missing in .env")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+service_supabase: Client | None = (
+    create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    if SUPABASE_SERVICE_ROLE_KEY
+    else None
+)
 
 EVENT_COLUMNS = (
     "event_id, name, type, start_date, end_date, event_status, "

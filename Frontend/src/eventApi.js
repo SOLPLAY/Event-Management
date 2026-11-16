@@ -52,7 +52,12 @@ export const eventTypes = [
 
 export function formatEventDate(value) {
   if (!value) return "Not set";
-  return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, {
+  const dateValue = String(value).slice(0, 10);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateValue)
+    ? new Date(`${dateValue}T00:00:00`)
+    : new Date(value);
+  if (Number.isNaN(date.getTime())) return "Not set";
+  return date.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "numeric",

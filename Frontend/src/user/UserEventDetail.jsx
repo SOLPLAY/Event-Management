@@ -349,6 +349,7 @@ export default function UserEventDetail({
               <AccommodationTab
                 key="accommodation"
                 cache={cache}
+                event={event}
                 onAuthError={onAuthError}
                 onGoToRegistration={() => onTabChange("registration")}
               />

@@ -1,5 +1,6 @@
 export const EVENT_WORKSPACE_SECTIONS = [
   { id: "overview", label: "View event" },
+  { id: "sessions", label: "Sessions" },
   { id: "accommodation", label: "Accommodation" },
   { id: "advertisement", label: "Advertisement" },
   { id: "evaluation", label: "Evaluation" },
