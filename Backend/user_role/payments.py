@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from auth_tokens import AuthenticatedUser, get_current_user
-from event_management import supabase
+from event_management import service_supabase, supabase
 from user_role.common import (
     STATUS_CONFIRMED,
     error_code,
@@ -85,11 +85,12 @@ def _signed_urls(paths: list[str]) -> dict[str, str | None]:
 
 def _payment_account(event_id: int) -> dict | None:
     try:
+        payment_client = service_supabase or supabase
         rows = (
-            supabase.table("event_payment_account")
+            payment_client.table("event_payment_account")
             .select("payee_name, upi_id, bank_name, account_number, ifsc_code, instructions")
             .eq("event_id", event_id)
-            .eq("is_delete", False)
+            .or_("is_delete.eq.false,is_delete.is.null")
             .limit(1)
             .execute()
             .data
