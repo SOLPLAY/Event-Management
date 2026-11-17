@@ -22,11 +22,15 @@ const emptyForm = {
   fee: "0",
 };
 
-export default function EventOrganizerDashboard() {
+export default function EventOrganizerDashboard({ roleName = "Event Organizer" }) {
+  const isCommitteeMember =
+    roleName.trim().toLowerCase() === "event committee member";
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
-  const activeTab = ["create", "events", "update", "workspace"].includes(requestedTab)
+  const organizerTabs = ["create", "events", "update", "workspace"];
+  const committeeTabs = ["events", "workspace"];
+  const activeTab = (isCommitteeMember ? committeeTabs : organizerTabs).includes(requestedTab)
     ? requestedTab
     : "events";
   const requestedWorkspaceSection = searchParams.get("section");
@@ -67,10 +71,13 @@ export default function EventOrganizerDashboard() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
 
     async function fetchInitialEvents() {
       try {
-        const result = await requestEventApi("/organizer/events");
+        const result = await requestEventApi("/organizer/events", {
+          signal: controller.signal,
+        });
         if (!Array.isArray(result.data)) {
           throw new Error("The server response did not contain an event list.");
         }
@@ -79,7 +86,12 @@ export default function EventOrganizerDashboard() {
           setError("");
 
           const initialParams = new URLSearchParams(window.location.search);
-          if (initialParams.get("tab") === "update") {
+          if (
+            isCommitteeMember &&
+            ["create", "update"].includes(initialParams.get("tab"))
+          ) {
+            setSearchParams({ tab: "events" }, { replace: true });
+          } else if (initialParams.get("tab") === "update") {
             const requestedEventId = initialParams.get("event_id");
             const event = result.data.find(
               (candidate) => String(candidate.event_id) === requestedEventId
@@ -110,8 +122,9 @@ export default function EventOrganizerDashboard() {
     fetchInitialEvents();
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [setSearchParams]);
+  }, [isCommitteeMember, setSearchParams]);
 
   const filteredEvents = useMemo(
     () => filterEvents(events, query, selectedStatus),
@@ -147,6 +160,7 @@ export default function EventOrganizerDashboard() {
   }
 
   function selectTab(tab) {
+    if (isCommitteeMember && ["create", "update"].includes(tab)) return;
     if (tab === "create") {
       startNewEvent();
       setSearchParams({ tab: "create" });
@@ -256,18 +270,18 @@ export default function EventOrganizerDashboard() {
   }
 
   return (
-    <main className="nitt-admin">
+    <main className="nitt-admin role-dashboard">
       <header className="nitt-admin__topbar">
         <div className="nitt-admin__brand">
           <img className="nitt-admin__brand-logo" src={logo} alt="" />
           <div>
             <div className="nitt-admin__brand-title">NIT TRICHY</div>
-            <div className="nitt-admin__brand-sub">EVENT MANAGEMENT PORTAL</div>
+            <div className="nitt-admin__brand-sub">{roleName.toUpperCase()} PORTAL</div>
           </div>
         </div>
         <div className="nitt-admin__session-actions">
           <div className="nitt-admin__profile">
-            Signed in as {window.sessionStorage.getItem("loginUsername") || "Event Organizer"}
+            Signed in as {window.sessionStorage.getItem("loginUsername") || roleName}
           </div>
           <button
             className="nitt-admin__button nitt-admin__button--quiet"
@@ -283,11 +297,17 @@ export default function EventOrganizerDashboard() {
         className="nitt-admin__content event-organizer-content"
         aria-labelledby="organizer-heading"
       >
-        <div className="nitt-admin__eyebrow">Event organizer</div>
+        <div className="nitt-admin__eyebrow">{roleName}</div>
         <div className="nitt-admin__heading">
           <div>
-            <h1 id="organizer-heading">Manage events</h1>
-            <p>Create events, track approvals, and publish approved events.</p>
+            <h1 id="organizer-heading">
+              {isCommitteeMember ? "Event directory" : "Manage events"}
+            </h1>
+            <p>
+              {isCommitteeMember
+                ? "Browse events created by Event Organizers and view their event workspaces."
+                : "Create events, track approvals, and publish approved events."}
+            </p>
           </div>
         </div>
 
@@ -303,17 +323,19 @@ export default function EventOrganizerDashboard() {
                   setError("");
                 }}
               >
-                My events
+                {isCommitteeMember ? "All events" : "My events"}
               </button>
-              <button
-                className={`event-organizer-sidebar__link${activeTab === "create" ? " event-organizer-sidebar__link--active" : ""}`}
-                type="button"
-                aria-current={activeTab === "create" ? "page" : undefined}
-                onClick={() => selectTab("create")}
-              >
-                Create event
-              </button>
-              {(editingEventId || activeTab === "update") && (
+              {!isCommitteeMember && (
+                <button
+                  className={`event-organizer-sidebar__link${activeTab === "create" ? " event-organizer-sidebar__link--active" : ""}`}
+                  type="button"
+                  aria-current={activeTab === "create" ? "page" : undefined}
+                  onClick={() => selectTab("create")}
+                >
+                  Create event
+                </button>
+              )}
+              {!isCommitteeMember && (editingEventId || activeTab === "update") && (
                 <button
                   className={`event-organizer-sidebar__link${activeTab === "update" ? " event-organizer-sidebar__link--active" : ""}`}
                   type="button"
@@ -333,7 +355,10 @@ export default function EventOrganizerDashboard() {
                   className="event-organizer-sidebar__nav"
                   aria-label="Selected event pages"
                 >
-                  {EVENT_WORKSPACE_SECTIONS.map((section) => (
+                  {EVENT_WORKSPACE_SECTIONS.filter(
+                    (section) =>
+                      section.id !== "payments" || Number(selectedEvent?.fee ?? 0) > 0
+                  ).map((section) => (
                     <button
                       key={section.id}
                       className={`event-organizer-sidebar__link event-organizer-sidebar__link--nested${activeTab === "workspace" && activeWorkspaceSection === section.id ? " event-organizer-sidebar__link--active" : ""}`}
@@ -358,6 +383,17 @@ export default function EventOrganizerDashboard() {
             {error && (
               <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
                 {error}
+                <button
+                  className="nitt-admin__action"
+                  type="button"
+                  disabled={loading}
+                  onClick={() => {
+                    setLoading(true);
+                    loadEvents();
+                  }}
+                >
+                  Retry
+                </button>
               </p>
             )}
             {notice && <p className="nitt-admin__notice event-notice" role="status">{notice}</p>}
@@ -536,6 +572,7 @@ export default function EventOrganizerDashboard() {
                     key={event.event_id}
                     event={event}
                     mode="organizer"
+                    readOnly={isCommitteeMember}
                     busy={busyEventId === event.event_id}
                     onView={viewEvent}
                     onUpdate={editEvent}

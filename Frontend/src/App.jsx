@@ -4,6 +4,7 @@ import SystemAdministratorDashboard from "./SystemAdministratorDashboard";
 import SuperAdminDashboard from "./SuperAdminDashboard";
 import EventOrganizerDashboard from "./EventOrganizerDashboard";
 import UserDashboard from "./user/UserDashboard";
+import "./role-dashboard.css";
 
 function RoleRoute({ roles, children }) {
   const activeRole = window.sessionStorage.getItem("loginRole")?.toLowerCase();
@@ -40,6 +41,14 @@ function App() {
           element={
             <RoleRoute roles={["event organizer"]}>
               <EventOrganizerDashboard />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="/event-committee-member"
+          element={
+            <RoleRoute roles={["event committee member"]}>
+              <EventOrganizerDashboard roleName="Event Committee Member" />
             </RoleRoute>
           }
         />

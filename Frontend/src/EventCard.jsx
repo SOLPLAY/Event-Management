@@ -13,6 +13,7 @@ export default function EventCard({
   onUpdate,
   onDelete,
   onPublish,
+  readOnly = false,
 }) {
   const pending = event.event_status === "Pending";
   const locked = ["Published", "Completed"].includes(event.event_status);
@@ -74,7 +75,7 @@ export default function EventCard({
           >
             View event
           </button>
-          {canUpdate && (
+          {!readOnly && canUpdate && (
             <button
               className="nitt-admin__button nitt-admin__button--quiet"
               type="button"
@@ -84,7 +85,7 @@ export default function EventCard({
               Update
             </button>
           )}
-          {!locked && (
+          {!readOnly && !locked && (
             <>
               <button
                 className="nitt-admin__button nitt-admin__button--danger"

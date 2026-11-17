@@ -86,13 +86,13 @@ export default function SuperAdminDashboard() {
   }
 
   return (
-    <main className="nitt-admin">
+    <main className="nitt-admin role-dashboard">
       <header className="nitt-admin__topbar">
         <div className="nitt-admin__brand">
           <img className="nitt-admin__brand-logo" src={logo} alt="" />
           <div>
             <div className="nitt-admin__brand-title">NIT TRICHY</div>
-            <div className="nitt-admin__brand-sub">EVENT MANAGEMENT PORTAL</div>
+            <div className="nitt-admin__brand-sub">SUPER ADMIN PORTAL</div>
           </div>
         </div>
         <div className="nitt-admin__session-actions">

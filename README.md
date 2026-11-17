@@ -68,19 +68,29 @@ Additional database technologies may be explored as the project develops.
 
 1. From `Backend`, install dependencies with `py -m pip install -r requirements.txt`.
 2. Configure `Backend/.env` with `SUPABASE_URL`, `SUPABASE_SECRET_KEY`,
-   `SUPABASE_SERVICE_ROLE_KEY`, `COUCHBASE_CONNECTION_STRING`,
+   `COUCHBASE_CONNECTION_STRING`,
    `COUCHBASE_USERNAME`, `COUCHBASE_PASSWORD`, `COUCHBASE_BUCKET`,
    `COUCHBASE_SCOPE` and `COUCHBASE_COLLECTION`.
 3. From `Backend`, start the API with `uvicorn main:app --reload` (port 8000).
 4. From `Frontend`, run `npm install` and `npm run dev`.
+
+Keep Supabase secret keys backend-only. The backend uses
+`SUPABASE_SERVICE_ROLE_KEY` for elevated operations when configured; otherwise
+it uses `SUPABASE_SECRET_KEY`.
+
+For paid events, create the `event_payment_account` and `payment_submission`
+tables and their supplied indexes, and create the private `payment-proofs`
+Storage bucket. The organizer Payments tab is available only when an event fee
+is greater than zero; organizers can maintain payee details and verify or
+reject submitted payment proofs there.
 
 Before using accommodation requests, run
 `Documentation/accommodation_schema.sql` in the Supabase SQL Editor. Add one
 `room` row per room with its building, room number, bed capacity, and active
 state. If existing accommodation assignments predate the `room_id` column,
 rerun the legacy room-linking update in that SQL file after adding those rooms.
-Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment; it is used for
-server-side room inventory reads and the accommodation approval function.
+The backend uses its configured secret key for server-side room inventory reads
+and the accommodation approval function.
 
 Before marking session attendance, run
 `Documentation/session_attendance_schema.sql` in the Supabase SQL Editor.
@@ -102,7 +112,7 @@ publish scores again.
 The Event report tab summarizes active registrations and verified payment
 submission amounts, registration `fee_paid` totals, session attendance marks,
 unique students marked present, distinct session speakers, sponsors by level,
-evaluations and score/rating distributions, and active hospitality plans.
+evaluation scores, and active hospitality plans.
 Attendance charts count marks per session; the headline present-student count
 counts each registered student once if marked present in at least one session.
 
@@ -113,14 +123,18 @@ This adds sponsor records, advertisement media metadata, and a private
 advertisement schedules from the Advertisement tab, and upload JPEG, PNG, WebP,
 GIF, MP4, WebM, or MOV media (up to 50 MB). Files are stored in Supabase Storage;
 only their paths and metadata are stored in Postgres. Keep
-`SUPABASE_SERVICE_ROLE_KEY` only in `Backend/.env`; the backend uses it for
-private sponsor access and media upload, deletion, and signed viewing links.
+Supabase secret keys only in `Backend/.env`; the backend uses its configured
+secret key for private sponsor access and media upload, deletion, and signed
+viewing links.
 
 The login form accepts either the account username or numeric `login_id`. The
 backend verifies the password against the `login` table; currently only the
-System Administrator, Super Admin, and Event Organizer roles have configured
-destinations. Existing plaintext passwords are upgraded to salted PBKDF2 hashes
-after a successful sign-in.
+System Administrator, Super Admin, Event Organizer, Event Committee Member, and
+User roles have configured destinations. Event Committee Members open a replica
+of the organizer dashboard UI and can view all active events assigned to an
+Event Organizer, including their event workspaces. Committee members cannot
+create, edit, delete, or publish events. Existing plaintext passwords are
+upgraded to salted PBKDF2 hashes after a successful sign-in.
 
 The system-administrator directory loads active departments from the
 `department` table's `department_id` and `department_name` columns. The
@@ -136,7 +150,9 @@ Workshop, Competition, and Symposium; descriptions are stored in
 `event_type.description`. Organizers set a non-negative registration fee in
 rupees when submitting or editing an event; enter `0` for a free event. Super Admins can
 review all events and approve or reject pending requests. Organizer event lists
-are scoped to the authenticated user's `person_id` through `event_organizer`.
+are scoped to the authenticated user's `person_id` through `event_organizer`;
+committee-member event lists include active `event_organizer` links with the
+`Event Organizer` role.
 Published events become completed after their end date; published and
 completed events cannot be edited or deleted. Event type is saved in both
 `event.type` and `event_type.category`.

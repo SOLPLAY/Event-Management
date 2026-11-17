@@ -1,0 +1,368 @@
+.role-dashboard {
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+  background:
+    radial-gradient(ellipse at 2% 5%, rgba(216, 226, 205, .42), transparent 34%),
+    #f6f7f4;
+  color: #233b35;
+}
+
+.role-dashboard .nitt-admin__topbar {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  min-height: 74px;
+  padding-inline: max(28px, calc((100vw - 1260px) / 2));
+  border-bottom-color: #e7eae4;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 5px 22px rgba(28, 54, 46, .045);
+  backdrop-filter: blur(14px);
+}
+
+.role-dashboard .nitt-admin__brand {
+  gap: 12px;
+}
+
+.role-dashboard .nitt-admin__brand-logo {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #e8e8df;
+  box-shadow: none;
+}
+
+.role-dashboard .nitt-admin__brand-title {
+  color: #1d3d34;
+  font-size: 12px;
+  letter-spacing: .12em;
+}
+
+.role-dashboard .nitt-admin__brand-sub {
+  color: #84918a;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .12em;
+}
+
+.role-dashboard .nitt-admin__profile {
+  color: #74817a;
+  font-size: 12px;
+}
+
+.role-dashboard .nitt-admin__content {
+  width: min(1260px, 100%);
+  height: auto;
+  flex: 1 0 auto;
+  overflow: visible;
+  padding: 34px 32px 64px;
+}
+
+.role-dashboard .nitt-admin__eyebrow {
+  color: #b15d3d;
+  font-size: 10px;
+  letter-spacing: .16em;
+}
+
+.role-dashboard .nitt-admin__heading {
+  align-items: flex-end;
+  margin: 12px 0 20px;
+  gap: 16px;
+}
+
+.role-dashboard .nitt-admin__heading h1 {
+  color: #1d3d34;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 4vw, 46px);
+  font-weight: 400;
+  letter-spacing: -.035em;
+}
+
+.role-dashboard .nitt-admin__heading p {
+  margin-top: 6px;
+  color: #74817a;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.role-dashboard .nitt-admin__button--primary {
+  background: #477656;
+  color: #fff;
+}
+
+.role-dashboard .nitt-admin__button--primary:hover:not(:disabled) {
+  background: #365f44;
+}
+
+.role-dashboard .nitt-admin__button--quiet {
+  border-color: #dfe6df;
+  background: #fff;
+  color: #52675b;
+}
+
+.role-dashboard .nitt-admin__button--quiet:hover:not(:disabled) {
+  border-color: #cbd9ce;
+  background: #f5f8f4;
+  color: #30483c;
+}
+
+.role-dashboard .nitt-admin__search,
+.role-dashboard .nitt-admin__field input,
+.role-dashboard .nitt-admin__field select,
+.role-dashboard .nitt-admin__field textarea,
+.role-dashboard .event-form-grid__description textarea {
+  border-color: #e0e6df;
+  border-radius: 10px;
+  background: #fff;
+  color: #30483c;
+  font-size: 12px;
+}
+
+.role-dashboard .nitt-admin__search {
+  min-height: 43px;
+  padding-inline: 13px;
+}
+
+.role-dashboard .nitt-admin__field input,
+.role-dashboard .nitt-admin__field select {
+  min-height: 43px;
+}
+
+.role-dashboard .nitt-admin__field textarea,
+.role-dashboard .event-form-grid__description textarea {
+  padding: 10px 12px;
+}
+
+.role-dashboard .nitt-admin__search:focus,
+.role-dashboard .nitt-admin__field input:focus,
+.role-dashboard .nitt-admin__field select:focus,
+.role-dashboard .nitt-admin__field textarea:focus,
+.role-dashboard .event-form-grid__description textarea:focus {
+  border-color: #8da996;
+  box-shadow: 0 0 0 3px rgba(89, 130, 101, .12);
+}
+
+.role-dashboard .nitt-admin__field > span {
+  color: #30483c;
+  font-size: 12px;
+}
+
+.role-dashboard .nitt-admin__toolbar,
+.role-dashboard .event-toolbar {
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.role-dashboard .nitt-admin__count {
+  color: #849088;
+  font-size: 11px;
+}
+
+.role-dashboard .event-card-grid {
+  min-height: auto;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  overflow: visible;
+  gap: 16px;
+  padding: 2px 0 10px;
+}
+
+.role-dashboard .event-card,
+.role-dashboard .event-form-panel,
+.role-dashboard .event-workspace-panel,
+.role-dashboard .nitt-admin__table-wrap {
+  border-color: #e6eae4;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 21px rgba(35, 57, 47, .045);
+}
+
+.role-dashboard .event-card {
+  min-height: 250px;
+  gap: 12px;
+  padding: 19px;
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.role-dashboard .event-card:hover {
+  transform: translateY(-3px);
+  border-color: #cbd9ce;
+  box-shadow: 0 14px 28px rgba(35, 57, 47, .09);
+}
+
+.role-dashboard .event-card__title,
+.role-dashboard .event-form-panel h2,
+.role-dashboard .event-workspace-panel h2,
+.role-dashboard .nitt-admin__dialog h2 {
+  color: #213f34;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.role-dashboard .event-card__description,
+.role-dashboard .event-card__details > div,
+.role-dashboard .event-list-message,
+.role-dashboard .nitt-admin__dialog-intro {
+  color: #74817a;
+}
+
+.role-dashboard .event-list-message {
+  min-height: 140px;
+  flex: 0 0 auto;
+  padding: 44px 20px;
+  border: 1px solid #e6eae4;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .82);
+  font-size: 13px;
+}
+
+.role-dashboard .event-organizer-content {
+  width: min(1260px, 100%);
+  padding: 34px 32px 64px;
+}
+
+.role-dashboard .event-organizer-content .nitt-admin__heading {
+  margin: 12px 0 20px;
+}
+
+.role-dashboard .event-organizer-layout {
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.role-dashboard .event-organizer-sidebar {
+  position: sticky;
+  top: 96px;
+  width: 235px;
+  min-width: 205px;
+  max-height: calc(100vh - 116px);
+  padding: 15px 12px;
+  border-color: #e6eae4;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .86);
+  box-shadow: 0 6px 21px rgba(35, 57, 47, .045);
+}
+
+.role-dashboard .event-organizer-sidebar__link {
+  border-radius: 9px;
+  color: #718078;
+  font-size: 12px;
+}
+
+.role-dashboard .event-organizer-sidebar__link:hover:not(:disabled),
+.role-dashboard .event-organizer-sidebar__link--active {
+  background: #eaf1e9;
+  color: #315a46;
+}
+
+.role-dashboard .event-organizer-sidebar__title {
+  color: #30483c;
+}
+
+.role-dashboard .event-organizer-main {
+  overflow: visible;
+}
+
+.role-dashboard .event-form-panel,
+.role-dashboard .event-workspace-panel {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: clamp(20px, 3vw, 30px);
+}
+
+.role-dashboard .event-organizer-main > .event-toolbar {
+  margin-bottom: 16px;
+}
+
+.role-dashboard .nitt-admin__table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e6eae4;
+}
+
+.role-dashboard .nitt-admin__table th {
+  background: #f4f7f2;
+  color: #718078;
+  font-size: 10px;
+  letter-spacing: .08em;
+}
+
+.role-dashboard .nitt-admin__table td {
+  color: #40564a;
+  font-size: 12px;
+}
+
+.role-dashboard .nitt-admin__table tbody tr:hover {
+  background: #fafbf8;
+}
+
+.role-dashboard .nitt-admin__name {
+  color: #30483c;
+}
+
+.role-dashboard .nitt-admin__notice {
+  border-radius: 10px;
+}
+
+.role-dashboard .nitt-admin__notice:not(.nitt-admin__notice--error),
+.role-dashboard .event-notice {
+  border-color: #d7e8dc;
+  background: #f1f8f3;
+  color: #286847;
+}
+
+.role-dashboard .nitt-admin__dialog {
+  border-color: #e6eae4;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(28, 54, 46, .18);
+}
+
+@media (max-width: 760px) {
+  .role-dashboard .nitt-admin__topbar {
+    padding-inline: 18px;
+  }
+
+  .role-dashboard .nitt-admin__content,
+  .role-dashboard .event-organizer-content {
+    padding: 26px 18px 44px;
+  }
+
+  .role-dashboard .event-organizer-layout {
+    flex-direction: column;
+  }
+
+  .role-dashboard .event-organizer-sidebar {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .role-dashboard .event-organizer-sidebar__nav {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  .role-dashboard .event-organizer-main {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .role-dashboard .nitt-admin__topbar {
+    gap: 10px;
+    padding-inline: 12px;
+  }
+
+  .role-dashboard .nitt-admin__session-actions {
+    gap: 8px;
+  }
+
+  .role-dashboard .nitt-admin__profile {
+    max-width: 110px;
+  }
+
+  .role-dashboard .nitt-admin__content,
+  .role-dashboard .event-organizer-content {
+    padding: 22px 14px 36px;
+  }
+}

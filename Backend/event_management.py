@@ -14,7 +14,9 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SECRET_KEY")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = (
+    os.getenv("SUPABASE_SERVICE_ROLE_KEY") or SUPABASE_KEY
+)
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("Supabase credentials are missing in .env")
@@ -67,8 +69,18 @@ class EventDecision(BaseModel):
     decision: Literal["Approved", "Rejected"]
 
 
-def _require_role(user: AuthenticatedUser, role: str) -> None:
-    if user.role.strip().casefold() != role.casefold():
+def _require_role(
+    user: AuthenticatedUser,
+    role: str,
+    *,
+    allow_committee: bool = True,
+) -> None:
+    actual_role = user.role.strip().casefold()
+    required_role = role.strip().casefold()
+    allowed_roles = {required_role}
+    if allow_committee and required_role == "event organizer":
+        allowed_roles.add("event committee member")
+    if actual_role not in allowed_roles:
         raise HTTPException(status_code=403, detail="You are not allowed to perform this action")
 
 
@@ -194,15 +206,17 @@ def _get_event(event_id: int) -> dict:
 
 
 def _get_owned_event(event_id: int, user: AuthenticatedUser) -> dict:
-    ownership = (
+    ownership_query = (
         supabase.table("event_organizer")
         .select("organizer_id")
         .eq("event_id", event_id)
-        .eq("person_id", user.person_id)
         .eq("is_delete", False)
-        .limit(1)
-        .execute()
     )
+    if user.role.strip().casefold() == "event committee member":
+        ownership_query = ownership_query.eq("role", "Event Organizer")
+    else:
+        ownership_query = ownership_query.eq("person_id", user.person_id)
+    ownership = ownership_query.limit(1).execute()
     if not ownership.data:
         raise HTTPException(status_code=404, detail="Event not found")
     return _get_event(event_id)

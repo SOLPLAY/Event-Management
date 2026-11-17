@@ -301,10 +301,6 @@ function ResultsView({ data, onRefresh }) {
               <dd>{evaluation.score ?? "Not scored"}</dd>
             </div>
             <div>
-              <dt>Feedback rating</dt>
-              <dd>{evaluation.feedback_rating ?? "Not rated"}</dd>
-            </div>
-            <div>
               <dt>Certificate</dt>
               <dd>{evaluation.certificate_issued ? "Issued" : "Not issued"}</dd>
             </div>

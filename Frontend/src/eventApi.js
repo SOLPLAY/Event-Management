@@ -1,37 +1,89 @@
 const API_URL = "/api/event-management";
+const RETRYABLE_GET_STATUSES = new Set([500, 502, 503, 504]);
+const GET_RETRY_DELAYS_MS = [300, 700];
+
+function waitBeforeRetry(delay, signal) {
+  if (!signal) return new Promise((resolve) => setTimeout(resolve, delay));
+
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      reject(signal.reason ?? new Error("The request was cancelled."));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, delay);
+    signal.addEventListener("abort", abort, { once: true });
+    if (signal.aborted) abort();
+  });
+}
 
 export async function requestEventApi(path, options = {}) {
   const token = window.sessionStorage.getItem("accessToken");
   const isFormData = options.body instanceof FormData;
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  const method = (options.method ?? "GET").toUpperCase();
+  const retryDelays = method === "GET" ? GET_RETRY_DELAYS_MS : [];
+  const headers = {
+    ...(options.body && !isFormData ? { "Content-Type": "application/json" } : {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
 
-  let result;
-  try {
-    result = await response.json();
-  } catch {
-    throw new Error("The server returned an invalid response.");
+  for (let attempt = 0; ; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(`${API_URL}${path}`, { ...options, headers });
+    } catch (requestError) {
+      if (
+        attempt < retryDelays.length &&
+        !options.signal?.aborted &&
+        requestError instanceof TypeError
+      ) {
+        await waitBeforeRetry(retryDelays[attempt], options.signal);
+        continue;
+      }
+      throw requestError;
+    }
+
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      if (
+        attempt < retryDelays.length &&
+        RETRYABLE_GET_STATUSES.has(response.status)
+      ) {
+        await waitBeforeRetry(retryDelays[attempt], options.signal);
+        continue;
+      }
+      throw new Error("The server returned an invalid response.");
+    }
+
+    if (!response.ok) {
+      if (
+        attempt < retryDelays.length &&
+        RETRYABLE_GET_STATUSES.has(response.status)
+      ) {
+        await waitBeforeRetry(retryDelays[attempt], options.signal);
+        continue;
+      }
+      const detail = result?.detail;
+      const message = Array.isArray(detail)
+        ? detail.map((issue) => issue.msg ?? "Invalid input").join(" ")
+        : detail;
+      const error = new Error(
+        typeof message === "string" && message
+          ? message
+          : "The request could not be completed."
+      );
+      error.status = response.status;
+      throw error;
+    }
+
+    return result;
   }
-
-  if (!response.ok) {
-    const detail = result?.detail;
-    const message = Array.isArray(detail)
-      ? detail.map((issue) => issue.msg ?? "Invalid input").join(" ")
-      : detail;
-    throw new Error(
-      typeof message === "string" && message
-        ? message
-        : "The request could not be completed."
-    );
-  }
-
-  return result;
 }
 
 export const eventStatuses = [

@@ -21,6 +21,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from supabase import Client
 
 from auth_tokens import AuthenticatedUser, get_current_user
 from event_management import service_supabase, supabase
@@ -72,8 +73,9 @@ def _signed_urls(paths: list[str]) -> dict[str, str | None]:
     paths = [path for path in dict.fromkeys(paths) if path]
     if not paths:
         return {}
+    storage_client = _service_client()
     try:
-        responses = supabase.storage.from_(BUCKET).create_signed_urls(paths, SIGNED_URL_SECONDS)
+        responses = storage_client.storage.from_(BUCKET).create_signed_urls(paths, SIGNED_URL_SECONDS)
         return {
             item.get("path"): (item.get("signedURL") or item.get("signedUrl")) if not item.get("error") else None
             for item in responses
@@ -81,6 +83,15 @@ def _signed_urls(paths: list[str]) -> dict[str, str | None]:
     except Exception:
         logger.warning("Could not create signed URLs for payment screenshots", exc_info=True)
         return {}
+
+
+def _service_client() -> Client:
+    if service_supabase is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Payment processing is not configured. Set SUPABASE_SECRET_KEY on the backend.",
+        )
+    return service_supabase
 
 
 def _payment_account(event_id: int) -> dict | None:
@@ -106,7 +117,7 @@ def _payment_account(event_id: int) -> dict | None:
 def _submissions(registration_id: int) -> list[dict]:
     try:
         return (
-            supabase.table("payment_submission")
+            _service_client().table("payment_submission")
             .select("payment_id, transaction_id, amount, payment_date, payment_method, screenshot_path, status, remarks, created_date")
             .eq("registration_id", registration_id)
             .eq("is_delete", False)
@@ -114,6 +125,8 @@ def _submissions(registration_id: int) -> list[dict]:
             .execute()
             .data
         )
+    except HTTPException:
+        raise
     except Exception as error:
         if is_missing_object(error):
             logger.warning("payment_submission table is missing - run the feature 3 SQL migration")
@@ -308,9 +321,10 @@ def submit_payment_proof(event_id: int, body: PaymentProofIn, user: Authenticate
         proof = _validate_proof(body, fee)
 
         # 1. store the screenshot (private bucket, server-chosen file name)
+        service_client = _service_client()
         uploaded_path = f"{event_id}/{registration['registration_id']}/{uuid.uuid4().hex}.{proof['extension']}"
         try:
-            supabase.storage.from_(BUCKET).upload(uploaded_path, proof["image"], {"content-type": proof["mime"]})
+            service_client.storage.from_(BUCKET).upload(uploaded_path, proof["image"], {"content-type": proof["mime"]})
         except Exception:
             logger.exception("Screenshot upload failed (is the private '%s' bucket created?)", BUCKET)
             uploaded_path = None
@@ -322,7 +336,7 @@ def submit_payment_proof(event_id: int, body: PaymentProofIn, user: Authenticate
         # 2. record the submission
         try:
             rows = (
-                supabase.table("payment_submission")
+                service_client.table("payment_submission")
                 .insert(
                     {
                         "registration_id": registration["registration_id"],
@@ -374,7 +388,10 @@ def _discard_upload(path: str | None) -> None:
     """Remove a screenshot that was uploaded but never got a database row. Best effort."""
     if not path:
         return
+    if service_supabase is None:
+        logger.error("Could not remove orphaned screenshot %s: service-role Storage client is not configured", path)
+        return
     try:
-        supabase.storage.from_(BUCKET).remove([path])
+        service_supabase.storage.from_(BUCKET).remove([path])
     except Exception:
         logger.warning("Could not remove orphaned screenshot %s", path, exc_info=True)

@@ -269,7 +269,6 @@ export default function EventReport({ event }) {
     { label: "Absent marks", count: attendance.absent_session_marks ?? 0 },
     { label: "Unmarked", count: attendance.unmarked_session_slots ?? 0 },
   ]);
-  const feedbackRatings = toChartData(evaluations.feedback_ratings ?? []);
   const sponsorLevels = toChartData(sponsors.by_level ?? []);
   const photographsUrl = safeExternalUrl(report.photographs_url);
   const startDate = report.event?.start_date;
@@ -346,7 +345,6 @@ export default function EventReport({ event }) {
           centerValue={attendance.total_session_slots ?? 0}
         />
         <BarChart title="Evaluation score distribution" data={evaluations.score_distribution ?? []} />
-        <BarChart title="Feedback ratings" data={feedbackRatings} />
         <BarChart title="Sponsors by level" data={sponsorLevels} />
       </div>
 

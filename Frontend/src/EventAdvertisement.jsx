@@ -61,6 +61,8 @@ function upsertRecord(records, record, key) {
 export default function EventAdvertisement({ event }) {
   const apiPath = `/organizer/events/${event.event_id}`;
   const mediaInputRef = useRef(null);
+  const [activeCategory, setActiveCategory] = useState("advertisements");
+  const [activeSubtab, setActiveSubtab] = useState("details");
   const [advertisements, setAdvertisements] = useState([]);
   const [sponsors, setSponsors] = useState([]);
   const [advertisementForm, setAdvertisementForm] = useState(emptyAdvertisementForm);
@@ -325,6 +327,51 @@ export default function EventAdvertisement({ event }) {
       <h2 id="event-workspace-heading">Advertisement &amp; Sponsors</h2>
       <p>Manage promotion schedules, poster media, and event sponsor information.</p>
 
+      <div className="event-tabs" role="tablist" aria-label="Promotion details">
+        {[
+          { id: "advertisements", label: "Advertisements" },
+          { id: "sponsors", label: "Sponsors" },
+        ].map((category) => (
+          <button
+            key={category.id}
+            id={`promotion-${category.id}-tab`}
+            className={`event-tabs__tab${activeCategory === category.id ? " event-tabs__tab--active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeCategory === category.id}
+            aria-controls="promotion-category-panel"
+            onClick={() => {
+              setActiveCategory(category.id);
+              setActiveSubtab("details");
+              setError("");
+              setNotice("");
+            }}
+          >
+            {category.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="event-tabs" role="tablist" aria-label="Promotion actions">
+        {[
+          { id: "details", label: "Details" },
+          { id: "manage", label: `Manage ${activeCategory}` },
+        ].map((subtab) => (
+          <button
+            key={subtab.id}
+            id={`promotion-${activeCategory}-${subtab.id}-tab`}
+            className={`event-tabs__tab${activeSubtab === subtab.id ? " event-tabs__tab--active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === subtab.id}
+            aria-controls="promotion-subtab-panel"
+            onClick={() => setActiveSubtab(subtab.id)}
+          >
+            {subtab.label}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <p className="hospitality-message hospitality-message--error" role="alert">
           {error}
@@ -332,6 +379,17 @@ export default function EventAdvertisement({ event }) {
       )}
       {notice && <p className="hospitality-message" role="status">{notice}</p>}
 
+      <div
+        id="promotion-category-panel"
+        role="tabpanel"
+        aria-labelledby={`promotion-${activeCategory}-tab`}
+      >
+      <div
+        id="promotion-subtab-panel"
+        role="tabpanel"
+        aria-labelledby={`promotion-${activeCategory}-${activeSubtab}-tab`}
+      >
+      {activeSubtab === "manage" && activeCategory === "advertisements" && (
       <form className="event-sessions-form" onSubmit={saveAdvertisement}>
         <h3>{editingAdId ? "Edit advertisement" : "Add advertisement"}</h3>
         <div className="event-form-grid">
@@ -404,7 +462,9 @@ export default function EventAdvertisement({ event }) {
           </button>
         </div>
       </form>
+      )}
 
+      {activeSubtab === "manage" && activeCategory === "sponsors" && (
       <form className="event-sessions-form" onSubmit={saveSponsor}>
         <h3>{editingSponsorId ? "Edit sponsor" : "Add sponsor"}</h3>
         <div className="event-form-grid">
@@ -518,12 +578,19 @@ export default function EventAdvertisement({ event }) {
           </button>
         </div>
       </form>
+      )}
 
       {loading ? (
-        <p className="hospitality-message" role="status">Loading advertisements and sponsors…</p>
+        <p className="hospitality-message" role="status">
+          Loading {activeCategory === "advertisements" ? "advertisements" : "sponsors"}…
+        </p>
       ) : (
         <>
-          <h3 className="event-advertisement-heading">Advertisements</h3>
+          {activeCategory === "advertisements" && (
+          <>
+          {activeSubtab === "manage" && (
+            <h3 className="event-advertisement-heading">Manage advertisements</h3>
+          )}
           {advertisements.length ? (
             <div className="hospitality-grid">
               {advertisements.map((advertisement) => (
@@ -550,7 +617,7 @@ export default function EventAdvertisement({ event }) {
                       {advertisement.media_error}
                     </p>
                   )}
-                  <div className="event-session-card__actions">
+                  {activeSubtab === "manage" && <div className="event-session-card__actions">
                     {advertisement.media_path && (
                       <button
                         className="nitt-admin__button nitt-admin__button--quiet"
@@ -565,7 +632,10 @@ export default function EventAdvertisement({ event }) {
                       className="nitt-admin__button nitt-admin__button--quiet"
                       type="button"
                       disabled={savingAd || busyRecord !== ""}
-                      onClick={() => startEditingAd(advertisement)}
+                      onClick={() => {
+                        startEditingAd(advertisement);
+                        setActiveSubtab("manage");
+                      }}
                     >
                       Edit
                     </button>
@@ -577,15 +647,24 @@ export default function EventAdvertisement({ event }) {
                     >
                       {busyRecord === `ad-${advertisement.ad_id}` ? "Deleting…" : "Delete"}
                     </button>
-                  </div>
+                  </div>}
                 </article>
               ))}
             </div>
           ) : (
-            <p className="hospitality-message">No advertisements have been added for this event.</p>
+            <p className="hospitality-message">
+              No advertisements have been added for this event.
+              {activeSubtab === "details" ? " Use Manage advertisements to add one." : ""}
+            </p>
+          )}
+          </>
           )}
 
-          <h3 className="event-advertisement-heading">Event sponsors</h3>
+          {activeCategory === "sponsors" && (
+          <>
+          {activeSubtab === "manage" && (
+            <h3 className="event-advertisement-heading">Manage sponsors</h3>
+          )}
           {sponsors.length ? (
             <div className="hospitality-grid">
               {sponsors.map((sponsor) => (
@@ -599,7 +678,7 @@ export default function EventAdvertisement({ event }) {
                     <div><dt>Amount</dt><dd>{formatAmount(sponsor.sponsorship_amount)}</dd></div>
                     {sponsor.notes && <div><dt>Notes</dt><dd>{sponsor.notes}</dd></div>}
                   </dl>
-                  <div className="event-session-card__actions">
+                  {activeSubtab === "manage" && <div className="event-session-card__actions">
                     <button
                       className="nitt-admin__button nitt-admin__button--quiet"
                       type="button"
@@ -609,6 +688,7 @@ export default function EventAdvertisement({ event }) {
                         setSponsorForm(sponsorFormForRecord(sponsor));
                         setError("");
                         setNotice("");
+                        setActiveSubtab("manage");
                       }}
                     >
                       Edit
@@ -621,15 +701,22 @@ export default function EventAdvertisement({ event }) {
                     >
                       {busyRecord === `sponsor-${sponsor.sponsor_id}` ? "Deleting…" : "Delete"}
                     </button>
-                  </div>
+                  </div>}
                 </article>
               ))}
             </div>
           ) : (
-            <p className="hospitality-message">No sponsors have been added for this event.</p>
+            <p className="hospitality-message">
+              No sponsors have been added for this event.
+              {activeSubtab === "details" ? " Use Manage sponsors to add one." : ""}
+            </p>
+          )}
+          </>
           )}
         </>
       )}
+      </div>
+      </div>
     </section>
   );
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { formatEventDate, requestEventApi } from "./eventApi";
 import { EVENT_WORKSPACE_SECTIONS } from "./eventWorkspaceSections";
 import EventAccommodation from "./EventAccommodation";
 import EventAdvertisement from "./EventAdvertisement";
 import EventEvaluationSection from "./EventEvaluationSection";
 import EventHospitality from "./EventHospitality";
+import EventPayments from "./EventPayments";
 import EventReport from "./EventReport";
 import EventSessions from "./EventSessions";
 
@@ -14,6 +15,7 @@ const placeholderCopy = {
   advertisement: "Plan and manage event announcements and promotional materials.",
   evaluation: "Coordinate event evaluation forms, feedback, and results.",
   hospitality: "Coordinate hospitality services and attendee requirements.",
+  payments: "Manage payment account details and verify submitted payments.",
   report: "Prepare and review the event report.",
 };
 
@@ -27,6 +29,7 @@ function formatRegistrationFee(value) {
 }
 
 export default function EventWorkspace({ event, section }) {
+  const location = useLocation();
   const navigate = useNavigate();
   const activeSection =
     EVENT_WORKSPACE_SECTIONS.find((item) => item.id === section)?.id ?? "overview";
@@ -93,6 +96,10 @@ export default function EventWorkspace({ event, section }) {
       return <EventEvaluationSection key={event.event_id} event={event} />;
     }
 
+    if (activeSection === "payments") {
+      return <EventPayments key={event.event_id} event={event} />;
+    }
+
     if (activeSection === "advertisement") {
       return <EventAdvertisement key={event.event_id} event={event} />;
     }
@@ -134,7 +141,7 @@ export default function EventWorkspace({ event, section }) {
                           type="button"
                           onClick={() =>
                             navigate(
-                              `/event-organizer?tab=workspace&event_id=${event.event_id}&section=evaluation&registration_id=${record.registration_id}`
+                              `${location.pathname}?tab=workspace&event_id=${event.event_id}&section=evaluation&registration_id=${record.registration_id}`
                             )
                           }
                         >

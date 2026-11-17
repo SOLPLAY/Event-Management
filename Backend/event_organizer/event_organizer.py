@@ -7,6 +7,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field, model_validator
+from supabase import Client
 
 from auth_tokens import AuthenticatedUser, get_current_user
 from event_management import (
@@ -28,6 +29,9 @@ router = APIRouter(prefix="/event-management", tags=["Event Organizer"])
 logger = logging.getLogger(__name__)
 ADVERTISEMENT_BUCKET = "event-advertisements"
 MAX_ADVERTISEMENT_MEDIA_BYTES = 50 * 1024 * 1024
+PAYMENT_PROOF_BUCKET = "payment-proofs"
+PAYMENT_PROOF_SIGNED_URL_SECONDS = 3600
+PAYMENT_SETUP_HINT = "Payment tables are not set up yet. Run the provided payment schema in Supabase."
 
 
 class SessionDetails(BaseModel):
@@ -108,16 +112,52 @@ class SponsorDetails(BaseModel):
         return self
 
 
+class PaymentAccountDetails(BaseModel):
+    payee_name: str = Field(min_length=1, max_length=250)
+    upi_id: str | None = Field(default=None, max_length=250)
+    bank_name: str | None = Field(default=None, max_length=250)
+    account_number: str | None = Field(default=None, max_length=100)
+    ifsc_code: str | None = Field(default=None, max_length=50)
+    instructions: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def normalize_payment_account(self):
+        self.payee_name = self.payee_name.strip()
+        if not self.payee_name:
+            raise ValueError("Payee name is required")
+        for field_name in (
+            "upi_id",
+            "bank_name",
+            "account_number",
+            "ifsc_code",
+            "instructions",
+        ):
+            value = getattr(self, field_name)
+            if value is not None:
+                setattr(self, field_name, value.strip() or None)
+        if not self.upi_id and not self.account_number:
+            raise ValueError("Provide either a UPI ID or a bank account number")
+        return self
+
+
+class PaymentRejection(BaseModel):
+    remarks: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def normalize_remarks(self):
+        if self.remarks is not None:
+            self.remarks = self.remarks.strip() or None
+        return self
+
+
 class EvaluationCreate(BaseModel):
     registration_id: int = Field(gt=0)
     score: float | None = None
-    feedback_rating: int | None = Field(default=None, strict=True)
     certificate_issued: bool = False
 
 
 class EvaluationUpdate(BaseModel):
     score: float | None = None
-    feedback_rating: int | None = Field(default=None, strict=True)
     certificate_issued: bool
 
 
@@ -125,18 +165,54 @@ class SessionAttendanceUpdate(BaseModel):
     attendance_status: Literal["Present", "Absent"]
 
 
+def _payment_client() -> Client:
+    if service_supabase is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Payment management is not configured on the backend.",
+        )
+    return service_supabase
+
+
+def _require_paid_event(event_id: int, user: AuthenticatedUser) -> dict:
+    event = _get_owned_event(event_id, user)
+    try:
+        fee = Decimal(str(event.get("fee") or "0"))
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise HTTPException(
+            status_code=503,
+            detail="The event registration fee is not configured correctly.",
+        ) from error
+    if fee <= 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Payment management is available only for events with a registration fee.",
+        )
+    return event
+
+
+def _payment_setup_error(error: Exception, message: str) -> None:
+    if is_missing_object(error):
+        logger.warning("%s: %s", message, PAYMENT_SETUP_HINT)
+        raise HTTPException(status_code=503, detail=PAYMENT_SETUP_HINT) from error
+    logger.exception("%s", message)
+    raise HTTPException(status_code=500, detail=message) from error
+
+
 @router.get("/organizer/events")
 def get_organizer_events(user: AuthenticatedUser = Depends(get_current_user)):
     _require_role(user, "Event Organizer")
     try:
-        links = (
+        links_query = (
             supabase.table("event_organizer")
             .select("event_id")
-            .eq("person_id", user.person_id)
             .eq("is_delete", False)
-            .execute()
-            .data
         )
+        if user.role.strip().casefold() == "event committee member":
+            links_query = links_query.eq("role", "Event Organizer")
+        else:
+            links_query = links_query.eq("person_id", user.person_id)
+        links = links_query.execute().data
         event_ids = list({link["event_id"] for link in links})
         events = []
         if event_ids:
@@ -154,6 +230,7 @@ def get_organizer_events(user: AuthenticatedUser = Depends(get_current_user)):
     except HTTPException:
         raise
     except Exception as error:
+        logger.exception("Failed to fetch event list for role %s", user.role)
         raise HTTPException(status_code=500, detail="Failed to fetch your events") from error
 
 
@@ -387,6 +464,453 @@ def get_event_registrations(
             status_code=500,
             detail="Failed to fetch event registrations",
         ) from error
+
+
+@router.get("/organizer/events/{event_id}/payment-account")
+def get_event_payment_account(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _require_paid_event(event_id, user)
+        rows = (
+            _payment_client()
+            .table("event_payment_account")
+            .select(
+                "account_id, event_id, payee_name, upi_id, bank_name, "
+                "account_number, ifsc_code, instructions"
+            )
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return {"success": True, "data": rows[0] if rows else None}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to fetch event payment account")
+
+
+@router.post("/organizer/events/{event_id}/payment-account", status_code=201)
+def create_event_payment_account(
+    event_id: int,
+    details: PaymentAccountDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _require_paid_event(event_id, user)
+        client = _payment_client()
+        existing = (
+            client.table("event_payment_account")
+            .select("account_id, is_delete")
+            .eq("event_id", event_id)
+            .limit(1)
+            .execute()
+            .data
+        )
+        now = datetime.now()
+        account_values = details.model_dump()
+        if existing and not existing[0]["is_delete"]:
+            raise HTTPException(
+                status_code=409,
+                detail="Payment account details already exist for this event.",
+            )
+        if existing:
+            rows = (
+                client.table("event_payment_account")
+                .update(
+                    {
+                        **account_values,
+                        "is_delete": False,
+                        **_audit_fields(user.username),
+                    }
+                )
+                .eq("account_id", existing[0]["account_id"])
+                .execute()
+                .data
+            )
+        else:
+            rows = (
+                client.table("event_payment_account")
+                .insert(
+                    {
+                        **account_values,
+                        "event_id": event_id,
+                        "is_delete": False,
+                        "created_by": user.username,
+                        "created_date": now.date().isoformat(),
+                        "created_time": now.time().replace(microsecond=0).isoformat(),
+                    }
+                )
+                .execute()
+                .data
+            )
+        if not rows:
+            raise RuntimeError("The payment account save returned no record")
+        return {"success": True, "data": rows[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to save event payment account")
+
+
+@router.put("/organizer/events/{event_id}/payment-account")
+def update_event_payment_account(
+    event_id: int,
+    details: PaymentAccountDetails,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _require_paid_event(event_id, user)
+        rows = (
+            _payment_client()
+            .table("event_payment_account")
+            .update({**details.model_dump(), **_audit_fields(user.username)})
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Payment account details not found.")
+        return {"success": True, "data": rows[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to update event payment account")
+
+
+@router.delete("/organizer/events/{event_id}/payment-account")
+def delete_event_payment_account(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _require_paid_event(event_id, user)
+        rows = (
+            _payment_client()
+            .table("event_payment_account")
+            .update({"is_delete": True, **_audit_fields(user.username)})
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Payment account details not found.")
+        return {"success": True, "message": "Payment account details deleted."}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to delete event payment account")
+
+
+@router.get("/organizer/events/{event_id}/payment-submissions")
+def get_event_payment_submissions(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _require_paid_event(event_id, user)
+        client = _payment_client()
+        registrations = (
+            client.table("registration")
+            .select("registration_id, person_id")
+            .eq("event_id", event_id)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        registration_by_id = {
+            row["registration_id"]: row for row in registrations
+        }
+        registration_ids = list(registration_by_id)
+        if not registration_ids:
+            return {"success": True, "count": 0, "data": []}
+
+        submissions = (
+            client.table("payment_submission")
+            .select(
+                "payment_id, registration_id, transaction_id, amount, "
+                "payment_date, payment_method, screenshot_path, created_date, "
+                "created_time, status"
+            )
+            .in_("registration_id", registration_ids)
+            .eq("status", "Submitted")
+            .eq("is_delete", False)
+            .order("payment_id", desc=True)
+            .execute()
+            .data
+        )
+        person_ids = list(
+            {
+                registration_by_id[row["registration_id"]]["person_id"]
+                for row in submissions
+            }
+        )
+        people_by_id = {}
+        if person_ids:
+            people = (
+                client.table("person")
+                .select("person_id, first_name, last_name")
+                .in_("person_id", person_ids)
+                .execute()
+                .data
+            )
+            people_by_id = {row["person_id"]: row for row in people}
+
+        screenshot_paths = [
+            row["screenshot_path"] for row in submissions if row.get("screenshot_path")
+        ]
+        screenshot_urls = {}
+        if screenshot_paths:
+            try:
+                signed = client.storage.from_(PAYMENT_PROOF_BUCKET).create_signed_urls(
+                    screenshot_paths, PAYMENT_PROOF_SIGNED_URL_SECONDS
+                )
+            except Exception as error:
+                logger.exception("Could not sign event payment screenshots")
+                raise HTTPException(
+                    status_code=503,
+                    detail="Could not load payment screenshots right now.",
+                ) from error
+            for item in signed:
+                if item.get("error"):
+                    logger.error("Could not sign payment screenshot %s", item.get("path"))
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Could not load payment screenshots right now.",
+                    )
+                screenshot_urls[item.get("path")] = item.get("signedURL") or item.get("signedUrl")
+
+        records = []
+        for row in submissions:
+            registration = registration_by_id[row["registration_id"]]
+            person = people_by_id.get(registration["person_id"], {})
+            person_name = " ".join(
+                part
+                for part in (person.get("first_name"), person.get("last_name"))
+                if part
+            )
+            records.append(
+                {
+                    **{
+                        key: value
+                        for key, value in row.items()
+                        if key != "screenshot_path"
+                    },
+                    "person_name": person_name or f"Person {registration['person_id']}",
+                    "screenshot_url": screenshot_urls.get(row.get("screenshot_path")),
+                }
+            )
+        return {"success": True, "count": len(records), "data": records}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to fetch event payment submissions")
+
+
+def _get_owned_payment_submission(
+    event_id: int,
+    payment_id: int,
+    user: AuthenticatedUser,
+) -> tuple[dict, dict]:
+    _require_paid_event(event_id, user)
+    client = _payment_client()
+    submissions = (
+        client.table("payment_submission")
+        .select("payment_id, registration_id, amount, status")
+        .eq("payment_id", payment_id)
+        .eq("is_delete", False)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not submissions:
+        raise HTTPException(status_code=404, detail="Payment submission not found.")
+
+    registrations = (
+        client.table("registration")
+        .select("registration_id, status")
+        .eq("registration_id", submissions[0]["registration_id"])
+        .eq("event_id", event_id)
+        .or_("is_delete.eq.false,is_delete.is.null")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not registrations:
+        raise HTTPException(status_code=404, detail="Payment submission not found.")
+    return submissions[0], registrations[0]
+
+
+@router.post(
+    "/organizer/events/{event_id}/payment-submissions/{payment_id}/verify"
+)
+def verify_event_payment(
+    event_id: int,
+    payment_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        submission, registration = _get_owned_payment_submission(
+            event_id, payment_id, user
+        )
+        if submission["status"] != "Submitted":
+            raise HTTPException(status_code=409, detail="Only submitted payments can be verified.")
+        if registration["status"] != "Pending":
+            raise HTTPException(
+                status_code=409,
+                detail="This registration is no longer pending payment verification.",
+            )
+
+        client = _payment_client()
+        now = datetime.now()
+        review_fields = {
+            "verified_by": user.username,
+            "verified_date": now.date().isoformat(),
+            "remarks": None,
+            **_audit_fields(user.username),
+        }
+        updated_payment = (
+            client.table("payment_submission")
+            .update({"status": "Verified", **review_fields})
+            .eq("payment_id", payment_id)
+            .eq("status", "Submitted")
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not updated_payment:
+            raise HTTPException(
+                status_code=409,
+                detail="The payment changed; refresh and try again.",
+            )
+
+        try:
+            updated_registration = (
+                client.table("registration")
+                .update(
+                    {
+                        "status": "Confirmed",
+                        "fee_paid": submission["amount"],
+                        **_audit_fields(user.username),
+                    }
+                )
+                .eq("registration_id", registration["registration_id"])
+                .eq("event_id", event_id)
+                .eq("status", "Pending")
+                .or_("is_delete.eq.false,is_delete.is.null")
+                .execute()
+                .data
+            )
+            if not updated_registration:
+                raise HTTPException(
+                    status_code=409,
+                    detail="The registration changed; refresh and try again.",
+                )
+        except Exception as error:
+            try:
+                rollback = (
+                    client.table("payment_submission")
+                    .update(
+                        {
+                            "status": "Submitted",
+                            "verified_by": None,
+                            "verified_date": None,
+                            "remarks": None,
+                            **_audit_fields(user.username),
+                        }
+                    )
+                    .eq("payment_id", payment_id)
+                    .eq("status", "Verified")
+                    .execute()
+                    .data
+                )
+                if not rollback:
+                    raise RuntimeError("The payment verification rollback returned no record")
+            except Exception:
+                logger.exception(
+                    "Could not roll back payment %s after registration confirmation failed",
+                    payment_id,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail="Payment status could not be synchronized with the registration. Contact support.",
+                ) from error
+            if isinstance(error, HTTPException):
+                raise error
+            raise HTTPException(
+                status_code=500,
+                detail="Could not confirm the registration for this payment.",
+            ) from error
+
+        return {"success": True, "data": updated_payment[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to verify event payment")
+
+
+@router.post(
+    "/organizer/events/{event_id}/payment-submissions/{payment_id}/reject"
+)
+def reject_event_payment(
+    event_id: int,
+    payment_id: int,
+    rejection: PaymentRejection,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        submission, registration = _get_owned_payment_submission(
+            event_id, payment_id, user
+        )
+        if submission["status"] != "Submitted":
+            raise HTTPException(status_code=409, detail="Only submitted payments can be rejected.")
+        if registration["status"] != "Pending":
+            raise HTTPException(
+                status_code=409,
+                detail="This registration is no longer pending payment review.",
+            )
+
+        now = datetime.now()
+        updated = (
+            _payment_client()
+            .table("payment_submission")
+            .update(
+                {
+                    "status": "Rejected",
+                    "remarks": rejection.remarks,
+                    "verified_by": user.username,
+                    "verified_date": now.date().isoformat(),
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("payment_id", payment_id)
+            .eq("status", "Submitted")
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not updated:
+            raise HTTPException(
+                status_code=409,
+                detail="The payment changed; refresh and try again.",
+            )
+        return {"success": True, "data": updated[0]}
+    except HTTPException:
+        raise
+    except Exception as error:
+        _payment_setup_error(error, "Failed to reject event payment")
 
 
 @router.get("/organizer/events/{event_id}/sessions")
@@ -753,7 +1277,7 @@ def get_event_accommodation(
                     status_code=503,
                     detail=(
                         "Room availability is not configured. Set "
-                        "SUPABASE_SERVICE_ROLE_KEY in Backend/.env and restart the API."
+                        "SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) in Backend/.env and restart the API."
                     ),
                 )
             rooms = (
@@ -911,7 +1435,7 @@ def approve_event_accommodation(
                 status_code=503,
                 detail=(
                     "Accommodation approval is not configured. Set "
-                    "SUPABASE_SERVICE_ROLE_KEY in Backend/.env and restart the API."
+                    "SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) in Backend/.env and restart the API."
                 ),
             )
         result = (
@@ -1645,8 +2169,7 @@ def get_event_evaluations(
             evaluations = (
                 supabase.table("evaluation")
                 .select(
-                    "evaluation_id, registration_id, score, feedback_rating, "
-                    "certificate_issued"
+                    "evaluation_id, registration_id, score, certificate_issued"
                 )
                 .eq("event_id", event_id)
                 .in_("registration_id", registration_ids)
@@ -1692,6 +2215,7 @@ def get_event_evaluations(
     except HTTPException:
         raise
     except Exception as error:
+        logger.exception("Failed to fetch evaluations for event %s", event_id)
         raise HTTPException(
             status_code=500,
             detail="Failed to fetch event evaluations",
@@ -1884,6 +2408,7 @@ def create_event_evaluation(
             .insert(
                 {
                     **details.model_dump(),
+                    "feedback_rating": 1,
                     "event_id": event_id,
                     "is_delete": False,
                     "created_by": user.username,
@@ -1940,7 +2465,13 @@ def update_event_evaluation(
         _revoke_evaluation_release(event_id, user)
         updated = (
             supabase.table("evaluation")
-            .update({**details.model_dump(), **_audit_fields(user.username)})
+            .update(
+                {
+                    **details.model_dump(),
+                    "feedback_rating": 1,
+                    **_audit_fields(user.username),
+                }
+            )
             .eq("event_id", event_id)
             .eq("evaluation_id", evaluation_id)
             .or_("is_delete.eq.false,is_delete.is.null")
@@ -2065,9 +2596,7 @@ def get_event_report(
         if registration_ids:
             evaluations = (
                 supabase.table("evaluation")
-                .select(
-                    "registration_id, score, feedback_rating, certificate_issued"
-                )
+                .select("registration_id, score, certificate_issued")
                 .eq("event_id", event_id)
                 .in_("registration_id", registration_ids)
                 .or_("is_delete.eq.false,is_delete.is.null")
@@ -2137,7 +2666,6 @@ def get_event_report(
         total_attendance_slots = len(session_ids) * len(registration_ids)
 
         score_values = []
-        feedback_rating_counts: dict[int, int] = {}
         certificates_issued = 0
         for evaluation in evaluations:
             if evaluation.get("certificate_issued"):
@@ -2153,19 +2681,6 @@ def get_event_report(
                         "Ignoring invalid evaluation score for event %s",
                         event_id,
                     )
-            rating = evaluation.get("feedback_rating")
-            if rating is not None:
-                try:
-                    normalized_rating = int(rating)
-                    feedback_rating_counts[normalized_rating] = (
-                        feedback_rating_counts.get(normalized_rating, 0) + 1
-                    )
-                except (TypeError, ValueError):
-                    logger.warning(
-                        "Ignoring invalid feedback rating for event %s",
-                        event_id,
-                    )
-
         score_distribution = []
         if score_values:
             minimum_score = min(score_values)
@@ -2274,10 +2789,6 @@ def get_event_report(
                     if score_average is not None
                     else None,
                     "score_distribution": score_distribution,
-                    "feedback_ratings": [
-                        {"label": str(rating), "count": count}
-                        for rating, count in sorted(feedback_rating_counts.items())
-                    ],
                     "certificates_issued": certificates_issued,
                 },
                 "hospitality_plans": len(hospitality),
@@ -2298,7 +2809,7 @@ def create_event(
     details: EventDetails,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    _require_role(user, "Event Organizer")
+    _require_role(user, "Event Organizer", allow_committee=False)
     event_id = None
     try:
         inserted = (
@@ -2358,7 +2869,7 @@ def update_event(
     details: EventDetails,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    _require_role(user, "Event Organizer")
+    _require_role(user, "Event Organizer", allow_committee=False)
     try:
         event = _get_owned_event(event_id, user)
         current_status = _normalize_status(event.get("event_status"))
@@ -2406,7 +2917,7 @@ def delete_event(
     event_id: int,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    _require_role(user, "Event Organizer")
+    _require_role(user, "Event Organizer", allow_committee=False)
     try:
         event = _get_owned_event(event_id, user)
         if _normalize_status(event.get("event_status")) in {"Published", "Completed"}:
@@ -2440,7 +2951,7 @@ def publish_event(
     event_id: int,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    _require_role(user, "Event Organizer")
+    _require_role(user, "Event Organizer", allow_committee=False)
     try:
         event = _get_owned_event(event_id, user)
         if _normalize_status(event.get("event_status")) != "Approved":

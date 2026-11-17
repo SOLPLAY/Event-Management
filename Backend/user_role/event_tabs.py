@@ -313,7 +313,7 @@ def get_results(event_id: int, user: AuthenticatedUser = Depends(get_current_use
                 return None
             rows = (
                 supabase.table("evaluation")
-                .select("score, feedback_rating, certificate_issued")
+                .select("score, certificate_issued")
                 .eq("event_id", event_id)
                 .eq("registration_id", registration["registration_id"])  # only my own row
                 .eq("is_delete", False)

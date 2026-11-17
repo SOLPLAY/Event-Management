@@ -4,7 +4,6 @@ import { requestEventApi } from "./eventApi";
 
 const emptyForm = {
   score: "",
-  feedback_rating: "",
   certificate_issued: false,
 };
 
@@ -12,7 +11,6 @@ function formForEvaluation(evaluation) {
   return evaluation
     ? {
         score: evaluation.score ?? "",
-        feedback_rating: evaluation.feedback_rating ?? "",
         certificate_issued: evaluation.certificate_issued === true,
       }
     : { ...emptyForm };
@@ -23,7 +21,10 @@ export default function EventEvaluationSection({ event }) {
   const requestedRegistrationId = searchParams.get("registration_id");
   const [registrations, setRegistrations] = useState([]);
   const [evaluations, setEvaluations] = useState([]);
-  const [form, setForm] = useState({ ...emptyForm });
+  const [formState, setFormState] = useState({
+    registrationId: null,
+    values: { ...emptyForm },
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -33,6 +34,7 @@ export default function EventEvaluationSection({ event }) {
   const [releaseLoading, setReleaseLoading] = useState(true);
   const [releaseError, setReleaseError] = useState("");
   const [releaseRefreshKey, setReleaseRefreshKey] = useState(0);
+  const [reloadKey, setReloadKey] = useState(0);
   const registrationsPath = `/organizer/events/${event.event_id}/registrations`;
   const evaluationsPath = `/organizer/events/${event.event_id}/evaluations`;
   const selectedRegistration = registrations.find(
@@ -41,11 +43,16 @@ export default function EventEvaluationSection({ event }) {
   const evaluation = evaluations.find(
     (record) => String(record.registration_id) === requestedRegistrationId
   );
+  const form =
+    formState.registrationId === requestedRegistrationId
+      ? formState.values
+      : formForEvaluation(evaluation);
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     Promise.all([
-      requestEventApi(registrationsPath),
-      requestEventApi(evaluationsPath),
+      requestEventApi(registrationsPath, { signal: controller.signal }),
+      requestEventApi(evaluationsPath, { signal: controller.signal }),
     ])
       .then(([registrationsResult, evaluationsResult]) => {
         if (
@@ -57,15 +64,6 @@ export default function EventEvaluationSection({ event }) {
         if (active) {
           setRegistrations(registrationsResult.data);
           setEvaluations(evaluationsResult.data);
-          const registration = registrationsResult.data.find(
-            (record) => String(record.registration_id) === requestedRegistrationId
-          );
-          const selectedEvaluation = evaluationsResult.data.find(
-            (record) => String(record.registration_id) === requestedRegistrationId
-          );
-          setForm(
-            registration ? formForEvaluation(selectedEvaluation) : { ...emptyForm }
-          );
           setError("");
         }
       })
@@ -78,12 +76,16 @@ export default function EventEvaluationSection({ event }) {
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [evaluationsPath, registrationsPath, requestedRegistrationId]);
+  }, [evaluationsPath, registrationsPath, reloadKey]);
 
   useEffect(() => {
     let active = true;
-    requestEventApi(`/organizer/events/${event.event_id}/evaluation-release`)
+    const controller = new AbortController();
+    requestEventApi(`/organizer/events/${event.event_id}/evaluation-release`, {
+      signal: controller.signal,
+    })
       .then((result) => {
         if (!result.data || typeof result.data !== "object") {
           throw new Error("The server did not return evaluation publication status.");
@@ -102,6 +104,7 @@ export default function EventEvaluationSection({ event }) {
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [event.event_id, releaseRefreshKey]);
 
@@ -117,13 +120,25 @@ export default function EventEvaluationSection({ event }) {
       (record) =>
         String(record.registration_id) === String(registration.registration_id)
     );
-    setForm(formForEvaluation(selectedEvaluation));
+    setFormState({
+      registrationId: String(registration.registration_id),
+      values: formForEvaluation(selectedEvaluation),
+    });
     setError("");
     setNotice("");
   }
 
   function updateField(field, value) {
-    setForm((currentForm) => ({ ...currentForm, [field]: value }));
+    setFormState((currentState) => {
+      const currentForm =
+        currentState.registrationId === requestedRegistrationId
+          ? currentState.values
+          : formForEvaluation(evaluation);
+      return {
+        registrationId: requestedRegistrationId,
+        values: { ...currentForm, [field]: value },
+      };
+    });
   }
 
   async function saveEvaluation(submitEvent) {
@@ -144,8 +159,6 @@ export default function EventEvaluationSection({ event }) {
               ? {}
               : { registration_id: selectedRegistration.registration_id }),
             score: form.score === "" ? null : Number(form.score),
-            feedback_rating:
-              form.feedback_rating === "" ? null : Number(form.feedback_rating),
             certificate_issued: form.certificate_issued,
           }),
         }
@@ -193,7 +206,10 @@ export default function EventEvaluationSection({ event }) {
             String(record.evaluation_id) !== String(evaluation.evaluation_id)
         )
       );
-      setForm({ ...emptyForm });
+      setFormState({
+        registrationId: requestedRegistrationId,
+        values: { ...emptyForm },
+      });
       setNotice("Evaluation deleted.");
       setReleaseLoading(true);
       setReleaseRefreshKey((key) => key + 1);
@@ -233,6 +249,18 @@ export default function EventEvaluationSection({ event }) {
       {error && (
         <p className="hospitality-message hospitality-message--error" role="alert">
           {error}
+          <button
+            className="nitt-admin__action"
+            type="button"
+            disabled={loading}
+            onClick={() => {
+              setError("");
+              setLoading(true);
+              setReloadKey((key) => key + 1);
+            }}
+          >
+            Retry
+          </button>
         </p>
       )}
       {notice && <p className="hospitality-message" role="status">{notice}</p>}
@@ -253,6 +281,18 @@ export default function EventEvaluationSection({ event }) {
           {releaseError && (
             <p className="hospitality-message hospitality-message--error" role="alert">
               {releaseError}
+              <button
+                className="nitt-admin__action"
+                type="button"
+                disabled={releaseLoading}
+                onClick={() => {
+                  setReleaseError("");
+                  setReleaseLoading(true);
+                  setReleaseRefreshKey((key) => key + 1);
+                }}
+              >
+                Retry
+              </button>
             </p>
           )}
         </div>
@@ -283,7 +323,6 @@ export default function EventEvaluationSection({ event }) {
               <tr>
                 <th scope="col">Student</th>
                 <th scope="col">Score</th>
-                <th scope="col">Feedback rating</th>
                 <th scope="col">Certificate</th>
                 <th scope="col">Action</th>
               </tr>
@@ -299,7 +338,6 @@ export default function EventEvaluationSection({ event }) {
                   <tr key={registration.registration_id}>
                     <td>{registration.person_name}</td>
                     <td>{record?.score ?? "Not scored"}</td>
-                    <td>{record?.feedback_rating ?? "Not rated"}</td>
                     <td>
                       {record
                         ? record.certificate_issued
@@ -342,18 +380,6 @@ export default function EventEvaluationSection({ event }) {
                 step="any"
                 value={form.score}
                 onChange={(inputEvent) => updateField("score", inputEvent.target.value)}
-                disabled={saving}
-              />
-            </label>
-            <label className="nitt-admin__field">
-              <span>Feedback rating</span>
-              <input
-                type="number"
-                step="1"
-                value={form.feedback_rating}
-                onChange={(inputEvent) =>
-                  updateField("feedback_rating", inputEvent.target.value)
-                }
                 disabled={saving}
               />
             </label>

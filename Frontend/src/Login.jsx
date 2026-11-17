@@ -38,6 +38,7 @@ export default function Login() {
         admin: "/admin",
         "super admin": "/super-admin",
         "event organizer": "/event-organizer",
+        "event committee member": "/event-committee-member",
         user: "/user",
         users: "/user",
       };

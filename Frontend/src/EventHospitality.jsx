@@ -32,6 +32,7 @@ function sortByServiceDate(records) {
 }
 
 export default function EventHospitality({ event }) {
+  const [activeSubtab, setActiveSubtab] = useState("details");
   const [records, setRecords] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
@@ -163,6 +164,26 @@ export default function EventHospitality({ event }) {
       <h2 id="event-workspace-heading">Hospitality</h2>
       <p>Plan meals, vendors, service dates, and expected head counts.</p>
 
+      <div className="event-tabs" role="tablist" aria-label="Hospitality sections">
+        {[
+          { id: "details", label: "Details" },
+          { id: "manage", label: "Manage hospitality" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            id={`hospitality-${tab.id}-tab`}
+            className={`event-tabs__tab${activeSubtab === tab.id ? " event-tabs__tab--active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === tab.id}
+            aria-controls="hospitality-tabpanel"
+            onClick={() => setActiveSubtab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <p className="hospitality-message hospitality-message--error" role="alert">
           {error}
@@ -170,6 +191,12 @@ export default function EventHospitality({ event }) {
       )}
       {notice && <p className="hospitality-message" role="status">{notice}</p>}
 
+      <div
+        id="hospitality-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`hospitality-${activeSubtab}-tab`}
+      >
+      {activeSubtab === "manage" && (
       <form className="event-sessions-form" onSubmit={saveRecord}>
         <h3>{editingId ? "Edit hospitality details" : "Add hospitality details"}</h3>
         <div className="event-form-grid">
@@ -235,6 +262,7 @@ export default function EventHospitality({ event }) {
           </button>
         </div>
       </form>
+      )}
 
       {loading ? (
         <p className="hospitality-message" role="status">Loading hospitality details…</p>
@@ -260,12 +288,15 @@ export default function EventHospitality({ event }) {
                   <dd>{record.head_count ?? "Not provided"}</dd>
                 </div>
               </dl>
-              <div className="event-session-card__actions">
+              {activeSubtab === "manage" && <div className="event-session-card__actions">
                 <button
                   className="nitt-admin__button nitt-admin__button--quiet"
                   type="button"
                   disabled={saving || busyRecordId !== null}
-                  onClick={() => startEditing(record)}
+                  onClick={() => {
+                    startEditing(record);
+                    setActiveSubtab("manage");
+                  }}
                 >
                   Edit
                 </button>
@@ -277,15 +308,17 @@ export default function EventHospitality({ event }) {
                 >
                   {busyRecordId === record.hospitality_id ? "Deleting…" : "Delete"}
                 </button>
-              </div>
+              </div>}
             </article>
           ))}
         </div>
       ) : (
         <p className="hospitality-message">
           No hospitality details have been added for this event yet.
+          {activeSubtab === "details" ? " Use Manage hospitality to add one." : ""}
         </p>
       )}
+      </div>
     </section>
   );
 }

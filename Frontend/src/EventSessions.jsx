@@ -32,6 +32,7 @@ function sessionForm(session) {
 
 export default function EventSessions({ event }) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [activeSubtab, setActiveSubtab] = useState("details");
   const [sessionsState, setSessionsState] = useState({
     eventId: null,
     records: [],
@@ -210,6 +211,26 @@ export default function EventSessions({ event }) {
       <h2 id="event-workspace-heading">Sessions</h2>
       <p>Create and manage the schedule for this event.</p>
 
+      <div className="event-tabs" role="tablist" aria-label="Session sections">
+        {[
+          { id: "details", label: "Details" },
+          { id: "manage", label: "Manage sessions" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            id={`sessions-${tab.id}-tab`}
+            className={`event-tabs__tab${activeSubtab === tab.id ? " event-tabs__tab--active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={activeSubtab === tab.id}
+            aria-controls="sessions-tabpanel"
+            onClick={() => setActiveSubtab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {error && (
         <p className="nitt-admin__notice nitt-admin__notice--error" role="alert">
           {error}
@@ -222,6 +243,12 @@ export default function EventSessions({ event }) {
       )}
       {notice && <p className="nitt-admin__notice event-notice" role="status">{notice}</p>}
 
+      <div
+        id="sessions-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`sessions-${activeSubtab}-tab`}
+      >
+      {activeSubtab === "manage" && (
       <form className="event-sessions-form" onSubmit={saveSession}>
         <h3>{editingSessionId ? "Edit session" : "Add a session"}</h3>
         <div className="event-form-grid">
@@ -294,9 +321,12 @@ export default function EventSessions({ event }) {
           </button>
         </div>
       </form>
+      )}
 
       <section className="event-session-section" aria-labelledby="event-session-list-heading">
-        <h3 id="event-session-list-heading">Event schedule</h3>
+        <h3 id="event-session-list-heading">
+          {activeSubtab === "details" ? "Event schedule" : "Manage event schedule"}
+        </h3>
         {loading ? (
           <p className="hospitality-message" role="status">Loading sessions…</p>
         ) : sessionsState.records.length ? (
@@ -320,30 +350,41 @@ export default function EventSessions({ event }) {
                   >
                     Mark attendance
                   </button>
-                  <button
-                    className="nitt-admin__button nitt-admin__button--quiet"
-                    type="button"
-                    disabled={saving || busySessionId !== null}
-                    onClick={() => startEditing(session)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="nitt-admin__button nitt-admin__button--quiet"
-                    type="button"
-                    disabled={saving || busySessionId !== null}
-                    onClick={() => deleteSession(session)}
-                  >
-                    {busySessionId === session.session_id ? "Deleting…" : "Delete"}
-                  </button>
+                  {activeSubtab === "manage" && (
+                    <>
+                      <button
+                        className="nitt-admin__button nitt-admin__button--quiet"
+                        type="button"
+                        disabled={saving || busySessionId !== null}
+                        onClick={() => {
+                          startEditing(session);
+                          setActiveSubtab("manage");
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="nitt-admin__button nitt-admin__button--quiet"
+                        type="button"
+                        disabled={saving || busySessionId !== null}
+                        onClick={() => deleteSession(session)}
+                      >
+                        {busySessionId === session.session_id ? "Deleting…" : "Delete"}
+                      </button>
+                    </>
+                  )}
                 </div>
               </li>
             ))}
           </ol>
         ) : (
-          <p className="hospitality-message">No sessions have been added to this event yet.</p>
+          <p className="hospitality-message">
+            No sessions have been added to this event yet.
+            {activeSubtab === "details" ? " Use Manage sessions to add one." : ""}
+          </p>
         )}
       </section>
+      </div>
     </section>
   );
 }
