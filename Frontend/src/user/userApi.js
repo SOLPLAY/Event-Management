@@ -126,18 +126,23 @@ export function readFileAsDataUrl(file) {
   });
 }
 
-// The event page tabs, in display order. "results" is only offered for Completed events.
+// The evaluation tab remains available before publication; only final results wait
+// until the event is complete.
 export const eventTabs = [
   { id: "overview", label: "Overview" },
   { id: "schedule", label: "Schedule" },
   { id: "hospitality", label: "Hospitality" },
   { id: "accommodation", label: "My accommodation" },
   { id: "registration", label: "Registration & payment" },
+  { id: "evaluation", label: "Evaluations" },
   { id: "results", label: "Results" },
 ];
 
 export function visibleTabs(event) {
-  return eventTabs.filter((tab) => tab.id !== "results" || event?.event_status === "Completed");
+  return eventTabs.filter(
+    (tab) =>
+      tab.id !== "results" || event?.event_status === "Completed"
+  );
 }
 
 // Remembers each tab's data for as long as one event page stays open, and shares requests that are

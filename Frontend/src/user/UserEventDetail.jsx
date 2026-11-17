@@ -3,6 +3,7 @@ import { formatEventDate } from "../eventApi";
 import { createTabCache, formatAmount, formatFee, requestUserApi, visibleTabs } from "./userApi";
 import {
   AccommodationTab,
+  EvaluationScoresTab,
   HospitalityTab,
   ResultsTab,
   ScheduleTab,
@@ -377,6 +378,13 @@ export default function UserEventDetail({
                   onOpenPayment={onOpenPayment}
                 />
               </section>
+            )}
+            {activeTab === "evaluation" && (
+              <EvaluationScoresTab
+                key="evaluation"
+                cache={cache}
+                onAuthError={onAuthError}
+              />
             )}
             {activeTab === "results" && (
               <ResultsTab key="results" cache={cache} onAuthError={onAuthError} />

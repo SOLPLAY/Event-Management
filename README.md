@@ -91,6 +91,14 @@ Event organizers can add, edit, and remove hospitality plans from each event's
 Hospitality tab. Removed plans are soft-deleted and no additional schema change
 is required.
 
+To let participants view named evaluation scores, first run
+`Documentation/evaluation_score_release.sql` in the Supabase SQL Editor. On the
+organizer Evaluation tab, publish scores once every confirmed participant has
+an evaluation. Participants can then view the
+participant names and scores in the Evaluations tab. Creating, editing, or
+deleting an evaluation withdraws the previous publication; the organizer must
+publish scores again.
+
 The Event report tab summarizes active registrations and verified payment
 submission amounts, registration `fee_paid` totals, session attendance marks,
 unique students marked present, distinct session speakers, sponsors by level,

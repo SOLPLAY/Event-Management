@@ -279,6 +279,22 @@
   gap: 22px;
 }
 
+.user-score-row--me {
+  background: #fdf8f6;
+  font-weight: 650;
+}
+
+.user-score-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.user-score-heading .user-subheading {
+  margin-bottom: 0;
+}
+
 .user-list {
   display: flex;
   margin: 0;

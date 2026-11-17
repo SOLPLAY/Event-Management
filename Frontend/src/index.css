@@ -888,6 +888,35 @@ button {
   font-size: 16px;
 }
 
+.event-evaluation-release {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid var(--nitt-line);
+  border-radius: 7px;
+  background: #fcfaf5;
+}
+
+.event-evaluation-release strong {
+  color: var(--nitt-ink);
+  font-size: 13px;
+}
+
+.event-evaluation-release p {
+  margin: 5px 0 0;
+  color: var(--nitt-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.event-evaluation-release .hospitality-message {
+  margin-top: 8px;
+}
+
 .event-sessions-form h3 {
   margin: 0 0 16px;
   color: var(--nitt-ink);

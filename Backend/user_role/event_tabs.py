@@ -295,9 +295,21 @@ def get_results(event_id: int, user: AuthenticatedUser = Depends(get_current_use
             raise HTTPException(status_code=404, detail="Event not found")
         if not is_completed(event):
             raise HTTPException(status_code=409, detail="Results are available once the event is completed")
+        release_rows = (
+            supabase.table("event")
+            .select("results_released_at")
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not release_rows:
+            raise HTTPException(status_code=404, detail="Event not found")
+        released_at = release_rows[0].get("results_released_at")
 
         def my_evaluation():
-            if not registration:
+            if not registration or not released_at:
                 return None
             rows = (
                 supabase.table("evaluation")
@@ -366,7 +378,12 @@ def get_results(event_id: int, user: AuthenticatedUser = Depends(get_current_use
             }
     except HTTPException:
         raise
-    except Exception:
+    except Exception as error:
+        if is_missing_object(error):
+            raise HTTPException(
+                status_code=503,
+                detail="Results publishing is not set up yet. Please contact the organiser.",
+            ) from error
         logger.exception("Could not load results for event %s person %s", event_id, user.person_id)
         raise HTTPException(status_code=500, detail="Unable to load the results right now")
 
@@ -374,8 +391,128 @@ def get_results(event_id: int, user: AuthenticatedUser = Depends(get_current_use
         "success": True,
         "data": {
             "registered": registration is not None,
+            "released": True,
             "my_evaluation": evaluation,
             "winners": winners,
             "report": report,
         },
     }
+
+
+@router.get("/events/{event_id}/evaluation-scores")
+def get_evaluation_scores(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    require_user(user)
+    try:
+        event = get_visible_event(event_id)
+        if not event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        released_event = (
+            supabase.table("event")
+            .select("results_released_at")
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not released_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        released_at = released_event[0].get("results_released_at")
+        if not released_at:
+            return {
+                "success": True,
+                "data": {"released": False, "scores": []},
+            }
+
+        registrations = (
+            supabase.table("registration")
+            .select("registration_id, person_id")
+            .eq("event_id", event_id)
+            .eq("status", "Confirmed")
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+        registration_by_id = {
+            row["registration_id"]: row for row in registrations
+        }
+        registration_ids = list(registration_by_id)
+        evaluations = []
+        if registration_ids:
+            evaluations = (
+                supabase.table("evaluation")
+                .select("registration_id, score")
+                .eq("event_id", event_id)
+                .in_("registration_id", registration_ids)
+                .or_("is_delete.eq.false,is_delete.is.null")
+                .execute()
+                .data
+            )
+
+        person_ids = list(
+            {
+                registration_by_id[row["registration_id"]]["person_id"]
+                for row in evaluations
+            }
+        )
+        people_by_id = {}
+        if person_ids:
+            people = (
+                supabase.table("person")
+                .select("person_id, first_name, last_name")
+                .in_("person_id", person_ids)
+                .execute()
+                .data
+            )
+            people_by_id = {person["person_id"]: person for person in people}
+
+        scores = []
+        for evaluation in evaluations:
+            registration = registration_by_id[evaluation["registration_id"]]
+            person_id = registration["person_id"]
+            person = people_by_id.get(person_id, {})
+            scores.append(
+                {
+                    "name": full_name(person) or "Participant",
+                    "score": evaluation.get("score"),
+                    "is_me": person_id == user.person_id,
+                }
+            )
+        scores.sort(
+            key=lambda row: (
+                row["score"] is None,
+                -(float(row["score"]) if row["score"] is not None else 0),
+                row["name"].casefold(),
+            )
+        )
+        return {
+            "success": True,
+            "data": {
+                "released": True,
+                "released_at": released_at,
+                "scores": scores,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        if is_missing_object(error):
+            logger.warning(
+                "Evaluation score release column is missing; run the evaluation release SQL migration"
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="Evaluation score publishing is not set up yet. Please contact the organiser.",
+            ) from error
+        logger.exception(
+            "Could not load evaluation scores for event %s person %s",
+            event_id,
+            user.person_id,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to load evaluation scores right now",
+        ) from error

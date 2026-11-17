@@ -12,6 +12,7 @@ from auth_tokens import AuthenticatedUser, get_current_user
 from event_management import (
     EVENT_COLUMNS,
     EventDetails,
+    _auto_complete,
     _audit_fields,
     _event_cards,
     _get_owned_event,
@@ -21,6 +22,7 @@ from event_management import (
     service_supabase,
     supabase,
 )
+from user_role.common import is_missing_object
 
 router = APIRouter(prefix="/event-management", tags=["Event Organizer"])
 logger = logging.getLogger(__name__)
@@ -1696,6 +1698,147 @@ def get_event_evaluations(
         ) from error
 
 
+def _evaluation_release_progress(event_id: int) -> tuple[int, int]:
+    registrations = (
+        supabase.table("registration")
+        .select("registration_id")
+        .eq("event_id", event_id)
+        .eq("status", "Confirmed")
+        .or_("is_delete.eq.false,is_delete.is.null")
+        .execute()
+        .data
+    )
+    registration_ids = [row["registration_id"] for row in registrations]
+    evaluations = []
+    if registration_ids:
+        evaluations = (
+            supabase.table("evaluation")
+            .select("registration_id")
+            .eq("event_id", event_id)
+            .in_("registration_id", registration_ids)
+            .or_("is_delete.eq.false,is_delete.is.null")
+            .execute()
+            .data
+        )
+    evaluated_ids = {row["registration_id"] for row in evaluations}
+    return len(registrations), len(evaluated_ids)
+
+
+@router.get("/organizer/events/{event_id}/evaluation-release")
+def get_evaluation_release_status(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        event = _get_owned_event(event_id, user)
+        _auto_complete([event])
+        event_row = (
+            supabase.table("event")
+            .select("results_released_at")
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not event_row:
+            raise HTTPException(status_code=404, detail="Event not found")
+        confirmed_count, evaluated_count = _evaluation_release_progress(event_id)
+        return {
+            "success": True,
+            "data": {
+                "released_at": event_row[0].get("results_released_at"),
+                "confirmed_count": confirmed_count,
+                "evaluated_count": evaluated_count,
+                "missing_count": max(confirmed_count - evaluated_count, 0),
+                "event_status": event.get("event_status"),
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        if is_missing_object(error):
+            raise HTTPException(
+                status_code=503,
+                detail="Score publishing is not set up. Run Documentation/evaluation_score_release.sql in Supabase.",
+            ) from error
+        logger.exception("Failed to fetch evaluation release status for event %s", event_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch evaluation release status",
+        ) from error
+
+
+@router.post("/organizer/events/{event_id}/evaluation-release")
+def release_event_evaluations(
+    event_id: int,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    _require_role(user, "Event Organizer")
+    try:
+        _get_owned_event(event_id, user)
+        confirmed_count, evaluated_count = _evaluation_release_progress(event_id)
+        missing_count = confirmed_count - evaluated_count
+        if missing_count:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{missing_count} confirmed participant(s) still need an evaluation",
+            )
+        released_at = datetime.now().astimezone().isoformat()
+        updated = (
+            supabase.table("event")
+            .update(
+                {
+                    "results_released_at": released_at,
+                    **_audit_fields(user.username),
+                }
+            )
+            .eq("event_id", event_id)
+            .eq("is_delete", False)
+            .execute()
+            .data
+        )
+        if not updated:
+            raise HTTPException(status_code=404, detail="Event not found")
+        return {
+            "success": True,
+            "data": {
+                "released_at": updated[0].get("results_released_at") or released_at,
+                "confirmed_count": confirmed_count,
+                "evaluated_count": evaluated_count,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        if is_missing_object(error):
+            raise HTTPException(
+                status_code=503,
+                detail="Score publishing is not set up. Run Documentation/evaluation_score_release.sql in Supabase.",
+            ) from error
+        logger.exception("Failed to publish evaluation scores for event %s", event_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to publish evaluation scores",
+        ) from error
+
+
+def _revoke_evaluation_release(event_id: int, user: AuthenticatedUser) -> None:
+    (
+        supabase.table("event")
+        .update(
+            {
+                "results_released_at": None,
+                **_audit_fields(user.username),
+            }
+        )
+        .eq("event_id", event_id)
+        .eq("is_delete", False)
+        .execute()
+    )
+
+
 @router.post("/organizer/events/{event_id}/evaluations", status_code=201)
 def create_event_evaluation(
     event_id: int,
@@ -1734,6 +1877,7 @@ def create_event_evaluation(
                 detail="An evaluation already exists for this registration",
             )
 
+        _revoke_evaluation_release(event_id, user)
         now = datetime.now()
         inserted = (
             supabase.table("evaluation")
@@ -1793,6 +1937,7 @@ def update_event_evaluation(
     _require_role(user, "Event Organizer")
     try:
         _get_owned_event_evaluation(event_id, evaluation_id, user)
+        _revoke_evaluation_release(event_id, user)
         updated = (
             supabase.table("evaluation")
             .update({**details.model_dump(), **_audit_fields(user.username)})
@@ -1828,6 +1973,7 @@ def delete_event_evaluation(
     _require_role(user, "Event Organizer")
     try:
         _get_owned_event_evaluation(event_id, evaluation_id, user)
+        _revoke_evaluation_release(event_id, user)
         deleted = (
             supabase.table("evaluation")
             .update({"is_delete": True, **_audit_fields(user.username)})

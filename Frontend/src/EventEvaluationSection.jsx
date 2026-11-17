@@ -26,8 +26,13 @@ export default function EventEvaluationSection({ event }) {
   const [form, setForm] = useState({ ...emptyForm });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [releaseStatus, setReleaseStatus] = useState(null);
+  const [releaseLoading, setReleaseLoading] = useState(true);
+  const [releaseError, setReleaseError] = useState("");
+  const [releaseRefreshKey, setReleaseRefreshKey] = useState(0);
   const registrationsPath = `/organizer/events/${event.event_id}/registrations`;
   const evaluationsPath = `/organizer/events/${event.event_id}/evaluations`;
   const selectedRegistration = registrations.find(
@@ -36,7 +41,6 @@ export default function EventEvaluationSection({ event }) {
   const evaluation = evaluations.find(
     (record) => String(record.registration_id) === requestedRegistrationId
   );
-
   useEffect(() => {
     let active = true;
     Promise.all([
@@ -76,6 +80,30 @@ export default function EventEvaluationSection({ event }) {
       active = false;
     };
   }, [evaluationsPath, registrationsPath, requestedRegistrationId]);
+
+  useEffect(() => {
+    let active = true;
+    requestEventApi(`/organizer/events/${event.event_id}/evaluation-release`)
+      .then((result) => {
+        if (!result.data || typeof result.data !== "object") {
+          throw new Error("The server did not return evaluation publication status.");
+        }
+        if (active) {
+          setReleaseStatus(result.data);
+          setReleaseError("");
+        }
+      })
+      .catch((requestError) => {
+        if (active) setReleaseError(requestError.message);
+      })
+      .finally(() => {
+        if (active) setReleaseLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [event.event_id, releaseRefreshKey]);
 
   function selectRegistration(registration) {
     const nextParams = new URLSearchParams(searchParams);
@@ -137,6 +165,8 @@ export default function EventEvaluationSection({ event }) {
           : [...currentEvaluations, savedEvaluation]
       );
       setNotice(evaluation ? "Evaluation updated." : "Evaluation created.");
+      setReleaseLoading(true);
+      setReleaseRefreshKey((key) => key + 1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -165,10 +195,33 @@ export default function EventEvaluationSection({ event }) {
       );
       setForm({ ...emptyForm });
       setNotice("Evaluation deleted.");
+      setReleaseLoading(true);
+      setReleaseRefreshKey((key) => key + 1);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function publishEvaluations() {
+    setPublishing(true);
+    setReleaseError("");
+    setNotice("");
+    try {
+      const result = await requestEventApi(
+        `/organizer/events/${event.event_id}/evaluation-release`,
+        { method: "POST" }
+      );
+      if (!result.data?.released_at) {
+        throw new Error("The server did not confirm that scores were published.");
+      }
+      setReleaseStatus((current) => ({ ...current, ...result.data }));
+      setNotice("Evaluation scores are now visible to participants.");
+    } catch (requestError) {
+      setReleaseError(requestError.message);
+    } finally {
+      setPublishing(false);
     }
   }
 
@@ -183,6 +236,44 @@ export default function EventEvaluationSection({ event }) {
         </p>
       )}
       {notice && <p className="hospitality-message" role="status">{notice}</p>}
+      <section className="event-evaluation-release" aria-label="Participant score publication">
+        <div>
+          <strong>Participant score visibility</strong>
+          <p>
+            {releaseLoading
+              ? "Checking event status and publication requirements..."
+              : releaseError
+                ? "Publication status could not be loaded."
+                : releaseStatus?.released_at
+                ? "Scores are published. Editing any evaluation will hide them until you publish again."
+                : releaseStatus?.missing_count
+                  ? `${releaseStatus.missing_count} confirmed participant(s) still need an evaluation.`
+                : "Once published, participants can see every confirmed participant's name and score."}
+          </p>
+          {releaseError && (
+            <p className="hospitality-message hospitality-message--error" role="alert">
+              {releaseError}
+            </p>
+          )}
+        </div>
+        <button
+          className="nitt-admin__button nitt-admin__button--primary"
+          type="button"
+          onClick={publishEvaluations}
+          disabled={
+            publishing ||
+            releaseLoading ||
+            !releaseStatus ||
+            releaseStatus.missing_count > 0
+          }
+        >
+          {publishing
+            ? "Publishing..."
+            : releaseStatus?.released_at
+              ? "Scores published"
+              : "Publish participant scores"}
+        </button>
+      </section>
       {loading ? (
         <p className="hospitality-message" role="status">Loading evaluation details…</p>
       ) : error ? null : registrations.length ? (

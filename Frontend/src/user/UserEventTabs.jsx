@@ -36,6 +36,12 @@ function LazyTab({ cache, resource, onAuthError, children }) {
     };
   }, [cache, resource, reloadKey, onAuthError]);
 
+  function refresh() {
+    cache.invalidate(resource);
+    setState({ loading: true, data: null, error: "" });
+    setReloadKey((key) => key + 1);
+  }
+
   if (state.loading) return <p className="event-list-message">Loading…</p>;
 
   if (state.error) {
@@ -45,10 +51,7 @@ function LazyTab({ cache, resource, onAuthError, children }) {
         <button
           className="nitt-admin__action"
           type="button"
-          onClick={() => {
-            setState({ loading: true, data: null, error: "" });
-            setReloadKey((key) => key + 1);
-          }}
+          onClick={refresh}
         >
           Retry
         </button>
@@ -56,7 +59,7 @@ function LazyTab({ cache, resource, onAuthError, children }) {
     );
   }
 
-  return children(state.data);
+  return children(state.data, refresh);
 }
 
 function nextLocalDate(value) {
@@ -283,7 +286,7 @@ export function AccommodationTab({
   );
 }
 
-function ResultsView({ data }) {
+function ResultsView({ data, onRefresh }) {
   const evaluation = data.my_evaluation;
   const report = data.report;
 
@@ -306,6 +309,19 @@ function ResultsView({ data }) {
               <dd>{evaluation.certificate_issued ? "Issued" : "Not issued"}</dd>
             </div>
           </dl>
+        ) : !data.released ? (
+          <div>
+            <p className="user-detail__muted">
+              Your evaluation and event scores will appear after the organizer publishes them.
+            </p>
+            <button
+              className="nitt-admin__button nitt-admin__button--quiet"
+              type="button"
+              onClick={onRefresh}
+            >
+              Check again
+            </button>
+          </div>
         ) : (
           <p className="user-detail__muted">
             {data.registered
@@ -381,7 +397,87 @@ function ResultsView({ data }) {
 export function ResultsTab({ cache, onAuthError }) {
   return (
     <LazyTab cache={cache} resource="results" onAuthError={onAuthError}>
-      {(data) => <ResultsView data={data} />}
+      {(data, onRefresh) => (
+        <ResultsView data={data} onRefresh={onRefresh} />
+      )}
+    </LazyTab>
+  );
+}
+
+function EvaluationScoresView({ data, onRefresh }) {
+  if (!data.released) {
+    return (
+      <section>
+        <p className="user-detail__muted">
+          The organizer has not published participant scores yet. Please check again later.
+        </p>
+        <button
+          className="nitt-admin__button nitt-admin__button--quiet"
+          type="button"
+          onClick={onRefresh}
+        >
+          Check again
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="evaluation-scores-heading">
+      <div className="user-score-heading">
+        <h4 id="evaluation-scores-heading" className="user-subheading">
+          Participant scores
+        </h4>
+        <button
+          className="nitt-admin__button nitt-admin__button--quiet"
+          type="button"
+          onClick={onRefresh}
+        >
+          Refresh scores
+        </button>
+      </div>
+      {data.scores?.length ? (
+        <div className="registration-table-wrap">
+          <table className="registration-table">
+            <thead>
+              <tr>
+                <th scope="col">Participant</th>
+                <th scope="col">Score</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.scores.map((record, index) => (
+                <tr
+                  key={`${record.name}-${index}`}
+                  className={record.is_me ? "user-score-row--me" : undefined}
+                >
+                  <td>
+                    {record.name}
+                    {record.is_me && (
+                      <span className="user-registered user-list__you">You</span>
+                    )}
+                  </td>
+                  <td>{record.score ?? "Not scored"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="user-detail__muted">
+          No participant scores have been recorded for this event.
+        </p>
+      )}
+    </section>
+  );
+}
+
+export function EvaluationScoresTab({ cache, onAuthError }) {
+  return (
+    <LazyTab cache={cache} resource="evaluation-scores" onAuthError={onAuthError}>
+      {(data, onRefresh) => (
+        <EvaluationScoresView data={data} onRefresh={onRefresh} />
+      )}
     </LazyTab>
   );
 }
