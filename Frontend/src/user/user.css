@@ -516,3 +516,769 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Participant portal */
+.user-dashboard {
+  min-height: 100vh;
+  height: auto;
+  overflow: visible;
+  background:
+    radial-gradient(ellipse at 2% 5%, rgba(216, 226, 205, .42), transparent 34%),
+    #f6f7f4;
+  color: #233b35;
+}
+
+.user-dashboard .nitt-admin__topbar {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  min-height: 74px;
+  padding-inline: max(28px, calc((100vw - 1260px) / 2));
+  border-bottom-color: #e7eae4;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 5px 22px rgba(28, 54, 46, .045);
+  backdrop-filter: blur(14px);
+}
+
+.user-dashboard .nitt-admin__brand {
+  gap: 12px;
+}
+
+.user-dashboard .nitt-admin__brand-logo {
+  width: 44px;
+  height: 44px;
+  border: 1px solid #e8e8df;
+  box-shadow: none;
+}
+
+.user-dashboard .nitt-admin__brand-title {
+  color: #1d3d34;
+  font-size: 12px;
+  letter-spacing: .12em;
+}
+
+.user-dashboard .nitt-admin__brand-sub {
+  color: #84918a;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: .12em;
+}
+
+.user-session {
+  gap: 11px;
+}
+
+.user-session__avatar {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #dfe9df;
+  border-radius: 50%;
+  background: #eaf1e9;
+  color: #315a46;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.user-session__identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin-right: 8px;
+}
+
+.user-session__identity span {
+  color: #8b9690;
+  font-size: 10px;
+}
+
+.user-session__identity strong {
+  overflow: hidden;
+  max-width: 180px;
+  color: #30453d;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-dashboard .nitt-admin__content {
+  width: min(1260px, 100%);
+  height: auto;
+  flex: 1 0 auto;
+  overflow: visible;
+  padding: 34px 32px 64px;
+}
+
+.user-welcome {
+  display: grid;
+  min-height: 270px;
+  grid-template-columns: 1.08fr .92fr;
+  overflow: hidden;
+  margin: 0 0 18px;
+  border: 1px solid #e6e9e1;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 16px 42px rgba(36, 61, 50, .07);
+}
+
+.user-welcome__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(26px, 4vw, 48px);
+}
+
+.user-welcome .nitt-admin__eyebrow,
+.user-page-context .nitt-admin__eyebrow {
+  color: #b15d3d;
+  font-size: 10px;
+  letter-spacing: .16em;
+}
+
+.user-welcome h1 {
+  max-width: 510px;
+  margin: 12px 0 10px;
+  color: #1d3d34;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 4vw, 49px);
+  font-weight: 400;
+  letter-spacing: -.045em;
+  line-height: 1.04;
+}
+
+.user-welcome h1 span {
+  color: #bc6545;
+  font-style: italic;
+}
+
+.user-welcome__copy > p {
+  max-width: 430px;
+  margin: 0;
+  color: #74817a;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.user-welcome__greeting {
+  margin-top: 21px;
+  color: #818d85;
+  font-size: 11px;
+}
+
+.user-welcome__greeting strong {
+  color: #355a46;
+  font-weight: 700;
+}
+
+.user-welcome__image {
+  position: relative;
+  min-height: 240px;
+  overflow: hidden;
+  background: #dbe5d8;
+}
+
+.user-welcome__image::after {
+  position: absolute;
+  inset: 55% 0 0;
+  background: linear-gradient(transparent, rgba(20, 42, 34, .55));
+  content: "";
+}
+
+.user-welcome__image img {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  object-fit: cover;
+  object-position: center 54%;
+}
+
+.user-welcome__image span {
+  position: absolute;
+  z-index: 1;
+  right: 20px;
+  bottom: 17px;
+  left: 20px;
+  color: rgba(255, 255, 255, .9);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .13em;
+  text-align: right;
+}
+
+.user-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 13px;
+  margin: 0 0 37px;
+}
+
+.user-stat {
+  display: flex;
+  min-height: 82px;
+  align-items: center;
+  gap: 13px;
+  padding: 15px 19px;
+  border: 1px solid #e8ebe5;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, .82);
+}
+
+.user-stat__icon {
+  display: grid;
+  width: 39px;
+  height: 39px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: #eaf2eb;
+  color: #3e7653;
+  font-size: 17px;
+}
+
+.user-stat__icon--gold {
+  background: #f8f0df;
+  color: #a77c32;
+}
+
+.user-stat__icon--blue {
+  background: #eaf0f6;
+  color: #557a9b;
+}
+
+.user-stat > div {
+  display: grid;
+  gap: 3px;
+}
+
+.user-stat strong {
+  color: #29473a;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.user-stat > div span {
+  color: #7d8981;
+  font-size: 11px;
+}
+
+.user-event-toolbar__heading h2 {
+  margin: 0;
+  color: #213f34;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -.02em;
+}
+
+.user-event-toolbar__heading p {
+  margin: 5px 0 0;
+  color: #849088;
+  font-size: 11px;
+}
+
+.user-dashboard .event-toolbar {
+  align-items: end;
+  margin-bottom: 16px;
+}
+
+.user-dashboard .event-toolbar__filters {
+  width: min(100%, 590px);
+}
+
+.user-dashboard .nitt-admin__search {
+  min-height: 43px;
+  padding: 0 13px;
+  border-color: #e0e6df;
+  border-radius: 11px;
+  background-color: #fff;
+  color: #30483c;
+  font-size: 12px;
+}
+
+.user-dashboard .nitt-admin__search:focus {
+  border-color: #8da996;
+  box-shadow: 0 0 0 3px rgba(89, 130, 101, .12);
+}
+
+.user-dashboard .event-card-grid {
+  min-height: auto;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  overflow: visible;
+  gap: 16px;
+  padding: 2px 0 10px;
+}
+
+.user-dashboard .user-event-card {
+  min-height: 250px;
+  gap: 12px;
+  padding: 19px;
+  border-color: #e6eae4;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 6px 21px rgba(35, 57, 47, .045);
+  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
+}
+
+.user-dashboard .user-event-card:hover {
+  transform: translateY(-3px);
+  border-color: #cbd9ce;
+  box-shadow: 0 14px 28px rgba(35, 57, 47, .09);
+}
+
+.user-dashboard .event-card__topline {
+  gap: 8px;
+}
+
+.user-dashboard .user-phase {
+  min-height: 24px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+}
+
+.user-dashboard .user-phase--upcoming {
+  background: #edf2e8;
+  color: #547044;
+}
+
+.user-dashboard .user-phase--ongoing {
+  background: #e5f2e9;
+  color: #36704c;
+}
+
+.user-dashboard .user-phase--ended {
+  background: #f0f1ee;
+  color: #707c74;
+}
+
+.user-dashboard .event-card__type {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f7f4ef;
+  color: #877965;
+  font-size: 10px;
+}
+
+.user-dashboard .event-card__title {
+  color: #254337;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 23px;
+  letter-spacing: -.025em;
+  line-height: 1.2;
+}
+
+.user-dashboard .event-card__description {
+  margin: -5px 0 0;
+  color: #7b8880;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.user-dashboard .event-card__details {
+  gap: 8px;
+  margin-top: 1px;
+}
+
+.user-dashboard .event-card__details > div {
+  font-size: 11px;
+}
+
+.user-dashboard .event-card__details dt {
+  color: #87918a;
+}
+
+.user-dashboard .event-card__details dd {
+  color: #3c5145;
+  font-weight: 650;
+}
+
+.user-dashboard .user-registered {
+  padding: 5px 9px;
+  background: #eaf3eb;
+  color: #39704c;
+  font-size: 10px;
+}
+
+.user-dashboard .event-card__actions .nitt-admin__button {
+  min-height: 38px;
+  flex: 0 0 auto;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.user-dashboard .nitt-admin__button--primary {
+  border-color: #315a47;
+  border-radius: 10px;
+  background: #315a47;
+  color: #fff;
+}
+
+.user-dashboard .nitt-admin__button--primary:hover:not(:disabled) {
+  border-color: #244b39;
+  background: #244b39;
+  box-shadow: 0 5px 13px rgba(43, 82, 61, .2);
+}
+
+.user-dashboard .nitt-admin__button--quiet {
+  min-height: 37px;
+  padding-inline: 13px;
+  border-color: #e2e8e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #52665a;
+  font-size: 11px;
+}
+
+.user-dashboard .nitt-admin__button--quiet:hover:not(:disabled) {
+  border-color: #bfcebf;
+  background: #f7faf6;
+}
+
+.user-dashboard .event-list-message {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 28px;
+  border: 1px dashed #dbe3da;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .65);
+  color: #7b8980;
+  font-size: 13px;
+  text-align: center;
+}
+
+.user-dashboard .nitt-admin__notice {
+  border-radius: 11px;
+}
+
+.user-page-context {
+  margin-bottom: 19px;
+}
+
+.user-page-context h1 {
+  margin: 7px 0 0;
+  color: #1d3d34;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 34px;
+  font-weight: 400;
+}
+
+.user-dashboard .user-detail {
+  min-height: auto;
+  flex: 0 0 auto;
+  overflow: visible;
+  padding: 0;
+}
+
+.user-dashboard .user-detail__back {
+  align-self: flex-start;
+}
+
+.user-dashboard .user-detail__panel {
+  gap: 19px;
+  padding: clamp(20px, 3vw, 32px);
+  border-color: #e6eae4;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 9px 30px rgba(35, 57, 47, .055);
+}
+
+.user-dashboard .user-detail__title {
+  color: #203f34;
+  font-size: clamp(28px, 3vw, 38px);
+  letter-spacing: -.035em;
+}
+
+.user-dashboard .user-detail__description {
+  color: #566a5d;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.user-dashboard .user-detail__facts {
+  gap: 18px;
+  padding: 18px 0;
+  border-color: #edf0eb;
+}
+
+.user-dashboard .user-detail__facts dt {
+  color: #89938c;
+  font-size: 9px;
+  letter-spacing: .1em;
+}
+
+.user-dashboard .user-detail__facts dd {
+  margin-top: 6px;
+  color: #344b3e;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.user-dashboard .user-detail__muted {
+  color: #77857c;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.user-dashboard .user-tabs {
+  gap: 8px;
+  margin: 0;
+  border-bottom-color: #e8ede7;
+}
+
+.user-dashboard .user-tabs .event-tabs__tab {
+  min-height: 43px;
+  padding-inline: 13px;
+  border-bottom-width: 2px;
+  border-bottom-color: transparent;
+  color: #78877d;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.user-dashboard .user-tabs .event-tabs__tab--active {
+  border-bottom-color: #477457;
+  color: #315a47;
+}
+
+.user-dashboard .user-tabpanel {
+  gap: 18px;
+  padding-top: 1px;
+}
+
+.user-dashboard .user-detail__section h3,
+.user-dashboard .user-subheading {
+  color: #45684f;
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+.user-dashboard .user-schedule li,
+.user-dashboard .user-list__row {
+  padding: 13px 15px;
+  border-color: #e8ece6;
+  border-radius: 11px;
+  background: #fbfcfa;
+}
+
+.user-dashboard .user-schedule li {
+  border-left: 3px solid #c78c5c;
+}
+
+.user-dashboard .user-list__row--me {
+  border-left-color: #5b8a64;
+  background: #f5f9f4;
+}
+
+.user-dashboard .user-register__fee strong {
+  color: #284638;
+  font-size: 23px;
+}
+
+.user-dashboard .user-paycard {
+  gap: 13px;
+  padding: 19px;
+  border-color: #e6ebe4;
+  border-top: 3px solid #c78c5c;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.user-dashboard .user-paycard h3 {
+  color: #45684f;
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+.user-dashboard .user-paycard__amount strong {
+  color: #284638;
+}
+
+.user-dashboard .user-paycard__note {
+  border-radius: 9px;
+  background: #faf5e9;
+}
+
+.user-dashboard .user-copy {
+  border-radius: 7px;
+  color: #45684f;
+}
+
+.user-dashboard .user-notice {
+  border-radius: 10px;
+}
+
+.user-dashboard .user-photos img {
+  height: 150px;
+  border-radius: 10px;
+}
+
+@media (max-width: 760px) {
+  .user-dashboard .nitt-admin__topbar {
+    padding-inline: 18px;
+  }
+
+  .user-dashboard .nitt-admin__content {
+    padding: 24px 18px 44px;
+  }
+
+  .user-welcome {
+    grid-template-columns: 1fr;
+  }
+
+  .user-welcome__copy {
+    padding: 28px;
+  }
+
+  .user-welcome__image {
+    min-height: 190px;
+  }
+
+  .user-stats {
+    gap: 9px;
+    margin-bottom: 29px;
+  }
+
+  .user-stat {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 9px;
+    padding: 13px;
+  }
+
+  .user-stat__icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    font-size: 14px;
+  }
+
+  .user-dashboard .event-toolbar {
+    align-items: stretch;
+  }
+
+  .user-dashboard .event-toolbar__filters {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .user-dashboard .nitt-admin__topbar {
+    min-height: 66px;
+    gap: 8px;
+    padding-inline: 13px;
+  }
+
+  .user-dashboard .nitt-admin__brand {
+    gap: 8px;
+  }
+
+  .user-dashboard .nitt-admin__brand-logo {
+    width: 37px;
+    height: 37px;
+  }
+
+  .user-dashboard .nitt-admin__brand-sub {
+    font-size: 8px;
+  }
+
+  .user-session {
+    gap: 7px;
+  }
+
+  .user-session__avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .user-session__identity {
+    display: none;
+  }
+
+  .user-dashboard .user-session .nitt-admin__button {
+    min-height: 34px;
+    padding-inline: 9px;
+  }
+
+  .user-dashboard .nitt-admin__content {
+    padding: 19px 13px 36px;
+  }
+
+  .user-welcome {
+    border-radius: 16px;
+  }
+
+  .user-welcome__copy {
+    padding: 24px 21px;
+  }
+
+  .user-welcome h1 {
+    font-size: 37px;
+  }
+
+  .user-welcome__image {
+    min-height: 155px;
+  }
+
+  .user-stats {
+    gap: 7px;
+    margin-bottom: 27px;
+  }
+
+  .user-stat {
+    min-height: 106px;
+    padding: 10px;
+  }
+
+  .user-stat strong {
+    font-size: 18px;
+  }
+
+  .user-stat > div span {
+    font-size: 9px;
+    line-height: 1.35;
+  }
+
+  .user-event-toolbar__heading h2 {
+    font-size: 23px;
+  }
+
+  .user-dashboard .event-toolbar__filters {
+    grid-template-columns: 1fr;
+  }
+
+  .user-dashboard .user-event-card {
+    min-height: 0;
+  }
+
+  .user-dashboard .user-detail__panel {
+    padding: 19px 16px;
+  }
+
+  .user-dashboard .user-tabs {
+    margin-inline: -2px;
+  }
+
+  .user-dashboard .user-tabs .event-tabs__tab {
+    padding-inline: 10px;
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .user-dashboard *,
+  .user-dashboard *::before,
+  .user-dashboard *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
