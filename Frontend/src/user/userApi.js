@@ -131,6 +131,7 @@ export function readFileAsDataUrl(file) {
 export const eventTabs = [
   { id: "overview", label: "Overview" },
   { id: "schedule", label: "Schedule" },
+  { id: "photographs", label: "Event photographs" },
   { id: "hospitality", label: "Hospitality" },
   { id: "accommodation", label: "My accommodation" },
   { id: "registration", label: "Registration & payment" },

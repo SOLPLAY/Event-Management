@@ -93,6 +93,39 @@ export function HospitalityTab({ cache, onAuthError }) {
   );
 }
 
+export function PhotographsTab({ cache, onAuthError }) {
+  return (
+    <LazyTab cache={cache} resource="photographs" onAuthError={onAuthError}>
+      {(data) =>
+        data.items?.length ? (
+          <div className="user-photos" aria-label="Event photographs">
+            {data.items.map((photograph, index) => (
+              <a
+                key={photograph.photograph_id}
+                href={photograph.photograph_url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src={photograph.photograph_url}
+                  alt={photograph.caption || `Event photograph ${index + 1}`}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
+                {photograph.caption && <span>{photograph.caption}</span>}
+              </a>
+            ))}
+          </div>
+        ) : (
+          <p className="user-detail__muted">
+            No photographs have been published for this event yet.
+          </p>
+        )
+      }
+    </LazyTab>
+  );
+}
+
 function AccommodationContent({
   cache,
   data,

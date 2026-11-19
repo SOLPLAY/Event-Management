@@ -5,6 +5,7 @@ export const EVENT_WORKSPACE_SECTIONS = [
   { id: "advertisement", label: "Advertisement" },
   { id: "evaluation", label: "Evaluation" },
   { id: "registrations", label: "Student registrations" },
+  { id: "photographs", label: "Event photographs" },
   { id: "payments", label: "Payments" },
   { id: "hospitality", label: "Hospitality" },
   { id: "report", label: "Event report" },

@@ -10,6 +10,8 @@ import secrets
 from couchbase_db.routes import router as couchbase_router
 from auth_tokens import create_access_token
 from event_organizer.event_organizer import router as event_organizer_router
+from event_photographs import organizer_router as event_photographs_router
+from event_photographs import user_router as user_photographs_router
 from super_admin.super_admin import router as super_admin_router
 from system_administrator.internal_people import router as internal_people_router
 from user_role.events import router as user_events_router
@@ -52,7 +54,9 @@ def home():
 app.include_router(internal_people_router)
 app.include_router(super_admin_router)
 app.include_router(event_organizer_router)
+app.include_router(event_photographs_router)
 app.include_router(user_events_router)
+app.include_router(user_photographs_router)
 app.include_router(organizing_committee_events_router)
 
 # -----------------------------

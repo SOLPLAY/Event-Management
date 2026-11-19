@@ -6,6 +6,7 @@ import EventAccommodation from "./EventAccommodation";
 import EventAdvertisement from "./EventAdvertisement";
 import EventEvaluationSection from "./EventEvaluationSection";
 import EventHospitality from "./EventHospitality";
+import EventPhotographs from "./EventPhotographs";
 import EventPayments from "./EventPayments";
 import EventReport from "./EventReport";
 import EventSessions from "./EventSessions";
@@ -102,6 +103,10 @@ export default function EventWorkspace({ event, section }) {
 
     if (activeSection === "advertisement") {
       return <EventAdvertisement key={event.event_id} event={event} />;
+    }
+
+    if (activeSection === "photographs") {
+      return <EventPhotographs key={event.event_id} event={event} />;
     }
 
     if (activeSection === "registrations") {

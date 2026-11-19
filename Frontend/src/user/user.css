@@ -367,6 +367,20 @@
   object-fit: cover;
 }
 
+.user-photos a {
+  min-width: 0;
+  color: var(--nitt-ink);
+  text-decoration: none;
+}
+
+.user-photos a span {
+  display: block;
+  margin-top: 5px;
+  color: var(--nitt-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .user-linkbutton {
   padding: 0;
   border: 0;

@@ -127,6 +127,15 @@ Supabase secret keys only in `Backend/.env`; the backend uses its configured
 secret key for private sponsor access and media upload, deletion, and signed
 viewing links.
 
+Before using event photographs, run
+`Documentation/event_photographs.sql` in the Supabase SQL Editor. Event
+Organizers and Event Committee Members can add, view, update captions or
+replace images, and delete photographs from an event workspace. Users can view
+photographs for published and completed events. Images are stored in the
+private `event-photographs` Storage bucket; JPEG, PNG, and WebP files up to
+20 MB are supported. Configure a backend-only Supabase service-role key for
+photo metadata and storage operations.
+
 The login form accepts either the account username or numeric `login_id`. The
 backend verifies the password against the `login` table; currently only the
 System Administrator, Super Admin, Event Organizer, Event Committee Member, and

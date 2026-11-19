@@ -5,6 +5,7 @@ import {
   AccommodationTab,
   EvaluationScoresTab,
   HospitalityTab,
+  PhotographsTab,
   ResultsTab,
   ScheduleTab,
 } from "./UserEventTabs";
@@ -204,6 +205,7 @@ export default function UserEventDetail({
     const quiet = () => {}; // a failed prefetch is ignored; opening the tab asks again and shows the error
     cache.load("hospitality").catch(quiet);
     cache.load("accommodation").catch(quiet);
+    cache.load("photographs").catch(quiet);
     if (isCompleted) cache.load("results").catch(quiet);
   }, [cache, detailLoaded, isCompleted]);
 
@@ -345,6 +347,9 @@ export default function UserEventDetail({
               ))}
             {activeTab === "hospitality" && (
               <HospitalityTab key="hospitality" cache={cache} onAuthError={onAuthError} />
+            )}
+            {activeTab === "photographs" && (
+              <PhotographsTab key="photographs" cache={cache} onAuthError={onAuthError} />
             )}
             {activeTab === "accommodation" && (
               <AccommodationTab
